@@ -3,6 +3,30 @@
 Registro de decisiones clave de arquitectura tomadas durante el desarrollo, complementario a
 los ADR formales en [docs/adr/](../docs/adr/).
 
+## Embeddings exclusivamente locales (Ollama) — `GOOGLE_API_KEY` reservada al `PrescriptionAgent`
+
+**Decisión**: los embeddings semánticos (`DrugService`, `RAGPharmAgent`, búsqueda vectorial
+en `pgvector`) se generan **siempre en local vía Ollama** (`nomic-embed-text`), nunca con un
+proveedor externo. `GOOGLE_API_KEY` (Gemini) está reservada **exclusivamente** para el
+futuro `PrescriptionAgent` (Gemini 1.5 Pro multimodal, OCR de recetas) — no debe usarse para
+embeddings, RAG ni ningún otro flujo.
+
+**Motivación**: privacidad — los textos que se embeben (fichas técnicas/prospectos de CIMA)
+no son sensibles en sí, pero el principio se aplica de forma consistente para no crear una
+ruta accidental por la que datos de consultas de usuarios reales acaben en un proveedor
+externo. Coincide con el diseño ya documentado en `AGENTS.md` (`RAGPharmAgent` = Gemma 2
+local; `PrescriptionAgent` = Gemini 1.5 Pro).
+
+**Corrección aplicada**: `.env` tenía `EMBEDDING_PROVIDER=google` (inconsistente con el
+código real, que ya usa `OllamaClient` exclusivamente para embeddings sin ninguna rama hacia
+Google) — corregido a `EMBEDDING_PROVIDER=ollama`. `Settings.embedding_provider` en
+[settings.py](../src/infrastructure/config/settings.py) documenta ahora explícitamente esta
+frontera junto al campo `google_api_key`.
+
+**Estado del código**: ya cumplía esta decisión de facto — `DrugService`/`RAGPharmAgent`
+solo dependen de `LanguageModelPort`, cuya única implementación concreta hoy es
+`OllamaClient`. No hay ningún camino de código que use `google_api_key` para embeddings.
+
 ## CIMA en vivo como fuente primaria de verdad (no RAG estático)
 
 **Decisión**: la API oficial REST de CIMA/AEMPS (`https://cima.aemps.es/cima/rest/...`) se

@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     cima_base_url: str = "https://cima.aemps.es/cima/rest"
 
+    # Embeddings se generan siempre en local (Ollama) por privacidad de datos de salud —
+    # nunca se envían a un proveedor externo. `google_api_key` está reservada
+    # exclusivamente para el futuro PrescriptionAgent (Gemini 1.5 Pro multimodal, OCR de
+    # recetas); no debe usarse para embeddings ni para RAGPharmAgent. Ver DECISIONS.md.
     embedding_provider: str = "ollama"
     google_api_key: str | None = None
 
