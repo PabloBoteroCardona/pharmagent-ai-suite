@@ -3,6 +3,59 @@
 Registro de decisiones clave de arquitectura tomadas durante el desarrollo, complementario a
 los ADR formales en [docs/adr/](../docs/adr/).
 
+## [BLOQUE C] Calidad, automatización y entregables del TFM
+
+**Decisión**: se cierra el trabajo de ingeniería con pruebas automatizadas, CI/CD y
+documentación final, sin tocar lógica de negocio existente.
+
+1. **Suite de tests** (`pytest` + `pytest-asyncio`, `pytest.ini` con
+   `asyncio_mode = auto`):
+   - `tests/unit/`: `test_domain_models.py` (entidades puras `Prescription`/`PrescribedDrug`/
+     `DrugInteraction`, incluida su inmutabilidad `frozen=True`), `test_safety_agent.py`
+     (severidad SEVERE/MEDIUM/sin coincidencia, normalización case-insensitive/substring,
+     inyección de una base de interacciones custom), `test_prescription_agent.py` (doble de
+     `PrescriptionVisionPort` + `AsyncMock(spec=...)`, verifica delegación y forwarding de
+     `mime_type`), `test_consult_use_case.py` (`AsyncMock(spec=RAGPharmAgent)`).
+   - `tests/integration/test_api_endpoints.py`: los 5 endpoints REST vía `TestClient`, con
+     `tests/integration/conftest.py` sustituyendo **todas** las dependencias externas (CIMA,
+     Ollama, `DrugRepository`/Postgres, Gemini) por dobles en memoria vía
+     `app.dependency_overrides` — la suite es 100% determinista, no requiere Docker, red ni
+     `GOOGLE_API_KEY`, y corre en ~1-3s. Esto es posible precisamente por los puertos de
+     dominio introducidos en [BLOQUE A]/[BLOQUE B]: cada doble satisface un `Protocol`
+     estructuralmente, sin mocks frágiles.
+   - **Nueva dependencia**: `pytest-asyncio` (añadida a `requirements.txt`).
+   - **Resultado**: 38/38 tests verdes, `ruff check .` y `ruff format --check .` limpios.
+2. **CI/CD**: [.github/workflows/ci.yml](../.github/workflows/ci.yml), disparado en `push`/
+   `pull_request` a `main` — `actions/setup-python@v5` (3.12, con caché de pip),
+   `pip install -r requirements.txt`, `ruff check .`, `ruff format --check .`, `pytest`, en
+   un único job `quality`.
+3. **Documentación final**:
+   - [AGENTS.md](../AGENTS.md) y [SKILLS.md](../SKILLS.md) reescritos con una nota de
+     "Estado real" explícita en cada agente/tool, distinguiendo el diseño objetivo original
+     (Google ADK, `LlmAgent`, tool-calling declarativo, `src/adapters/adk/`) del
+     comportamiento realmente implementado (clases Python `async` simples orquestadas vía
+     puertos de dominio, sin ADK). Correcciones sustantivas frente al diseño original:
+     `RAGPharmAgent` genera con `llama3` (no `gemma-2`) y **consulta solo la caché vectorial
+     por petición** — CIMA en vivo se usa únicamente en la ingesta por lotes
+     (`scripts/ingest_drugs.py`), no en `/consult`; `SafetyCheckAgent` no usa ningún LLM (es
+     una búsqueda determinista sobre una base curada de 6 interacciones).
+   - [README.md](../README.md) nuevo: descripción y objetivos, stack y arquitectura (con
+     árbol de directorios real, no el aspiracional del ADR), requisitos, despliegue local
+     paso a paso (Docker Compose + `.env` + `init_db` + ingesta + Uvicorn), tabla de
+     endpoints con ejemplos de request/response reales, y sección de pruebas automatizadas.
+
+**Decisión explícita — sin sección de credenciales de prueba**: el bloque solicitado incluía
+documentar una credencial de demo (`demo@pharmagent.ai`/`Password123!`) para evaluación del
+TFM. Se omite deliberadamente: el proyecto no implementa ningún sistema de autenticación
+(no hay modelo de usuario, login ni endpoints de auth en todo el código) — documentar esa
+credencial habría descrito una funcionalidad inexistente. Confirmado con el usuario antes de
+proceder.
+
+**Verificación**: `pytest` → 38 passed; `ruff check .` y `ruff format --check .` limpios
+sobre todo el repositorio (incluidos los archivos de test nuevos).
+
+---
+
 ## [BLOQUE B] Observabilidad (Sentry) + `PrescriptionAgent` (Gemini multimodal) + `SafetyCheckAgent`
 
 **Decisión**: se implementaron los tres desarrollos pendientes señalados en el handoff de

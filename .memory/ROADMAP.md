@@ -129,8 +129,28 @@ Detalle completo y verificación en [DECISIONS.md](DECISIONS.md).
 - Pendiente explícito: `SafetyCheckAgent` usa una base de interacciones curada mínima, no una
   fuente clínica completa.
 
+## [BLOQUE C] Calidad, automatización y entregables del TFM — ✅ completado
+
+Detalle completo y verificación en [DECISIONS.md](DECISIONS.md).
+
+- **Tests**: `tests/unit/` (domain models, `SafetyCheckAgent`, `PrescriptionAgent` con
+  dobles, `ConsultDrugRAGUseCase` con `AsyncMock`) + `tests/integration/test_api_endpoints.py`
+  (los 5 endpoints REST, con todas las dependencias externas sustituidas por dobles en
+  memoria vía `app.dependency_overrides`) — **38/38 tests verdes**, deterministas, sin
+  Docker/red/credenciales.
+- **CI/CD**: [.github/workflows/ci.yml](../.github/workflows/ci.yml) — lint, formato y
+  pytest en cada `push`/`pull_request` a `main`.
+- **Documentación**: `AGENTS.md`/`SKILLS.md` corregidos para reflejar la arquitectura real
+  (sin ADK; `RAGPharmAgent`=`llama3` cache-only; `SafetyCheckAgent` sin LLM);
+  [README.md](../README.md) nuevo con descripción, arquitectura, despliegue local y
+  endpoints documentados.
+- Sin sección de credenciales de demo (no hay sistema de autenticación implementado —
+  decisión explícita, ver DECISIONS.md).
+- Verificado: `pytest` (38 passed), `ruff check .` y `ruff format --check .` limpios.
+
 ## Fases futuras
 
-Sin detallar todavía — pendientes de definición (tests automatizados, despliegue, entidad de
+Sin detallar todavía — pendientes de definición (despliegue en un entorno remoto, entidad de
 dominio `Drug` desacoplada del ORM, ampliación de la base de interacciones de
-`SafetyCheckAgent`, orquestación de los 3 agentes vía Google ADK real).
+`SafetyCheckAgent`, `RAGPharmAgent` con CIMA en vivo por petición además de la caché,
+orquestación de los 3 agentes vía Google ADK real).

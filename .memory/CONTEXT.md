@@ -12,10 +12,38 @@ y [SKILLS.md](../SKILLS.md) para el detalle de agentes y herramientas.
 
 ## Estado actual
 
-**[BLOQUE B] Observabilidad + `PrescriptionAgent` + `SafetyCheckAgent` — completado.**
-Continúa Fase 6 (Ingesta de Datos y Pruebas) en paralelo.
+**[BLOQUE C] Calidad, automatización y entregables del TFM — completado.** Los tres bloques
+de refactorización/ampliación ([BLOQUE A], [BLOQUE B], [BLOQUE C]) están cerrados; el
+proyecto tiene suite de tests, CI y documentación (README/AGENTS/SKILLS) alineados con la
+arquitectura real implementada.
 
 ## Último hito verificado
+
+**[BLOQUE C] — Suite de tests, CI/CD y documentación final.** Ver
+[DECISIONS.md](DECISIONS.md) para el detalle completo. Resumen:
+
+- **Tests** (`pytest` + `pytest-asyncio`, `pytest.ini`): `tests/unit/test_domain_models.py`,
+  `test_safety_agent.py`, `test_prescription_agent.py`, `test_consult_use_case.py` +
+  `tests/integration/test_api_endpoints.py` (los 5 endpoints REST). Todas las dependencias
+  externas (CIMA, Ollama, `DrugRepository`, Gemini) se sustituyen por dobles en memoria vía
+  `app.dependency_overrides` en [tests/integration/conftest.py](../tests/integration/conftest.py)
+  — la suite es determinista, sin Docker/red/credenciales, y corre en ~1-3s. **38/38 tests
+  verdes.**
+- **CI/CD**: [.github/workflows/ci.yml](../.github/workflows/ci.yml) — `ruff check .`,
+  `ruff format --check .`, `pytest` en cada `push`/`pull_request` a `main`.
+- **`AGENTS.md`/`SKILLS.md` corregidos**: cada agente/tool tiene ahora una nota de "Estado
+  real" que distingue el diseño ADK original del comportamiento implementado. Correcciones
+  sustantivas: `RAGPharmAgent` usa `llama3` (no `gemma-2`) y solo consulta la caché vectorial
+  por petición (CIMA en vivo es exclusivo de la ingesta batch); `SafetyCheckAgent` no usa
+  ningún LLM.
+- **`README.md` nuevo**: descripción, stack, arquitectura (árbol real de `src/`), despliegue
+  local paso a paso, tabla de endpoints con ejemplos reales, sección de tests. Sin sección de
+  credenciales de demo — el proyecto no tiene sistema de autenticación (decisión explícita,
+  confirmada con el usuario antes de proceder).
+- **Verificado sin regresiones**: `pytest` (38 passed), `ruff check .` y
+  `ruff format --check .` limpios sobre todo el repositorio.
+
+---
 
 **[BLOQUE B] — Sentry, `GeminiClient`/`PrescriptionAgent` (Gemini 1.5 Pro multimodal) y
 `SafetyCheckAgent`.** Ver [DECISIONS.md](DECISIONS.md) para el detalle completo. Resumen:
@@ -190,9 +218,10 @@ la escritura real en Postgres sigue bloqueada por el bug de `asyncpg`/Windows �
 
 ## Siguiente paso pendiente
 
-**PASO 27** — Formalizar pruebas automatizadas. La verificación end-to-end de
-`RAGPharmAgent`, `PrescriptionAgent` y `SafetyCheckAgent` se ha hecho hasta ahora como
-pruebas de humo manuales (`TestClient` ad-hoc); queda convertirlas en una suite real en
-`tests/unit/`/`tests/integration/` (actualmente vacías). También pendiente: ampliar la base
-curada de interacciones de `SafetyCheckAgent` y desacoplar `DrugRepositoryPort` de `DrugModel`
-(ORM) con una entidad de dominio `Drug` pura.
+Sin un PASO numerado asignado todavía — los tres bloques de refactorización/ampliación
+([BLOQUE A]/[B]/[C]) están cerrados. Candidatos para continuar, sin orden de prioridad fijado
+por el usuario: (1) desacoplar `DrugRepositoryPort` de `DrugModel` (ORM) con una entidad de
+dominio `Drug` pura; (2) ampliar la base curada de interacciones de `SafetyCheckAgent` más
+allá de las 6 actuales; (3) hacer que `RAGPharmAgent`/`DrugService` consulten CIMA en vivo
+por petición además de la caché vectorial (hoy CIMA en vivo es exclusivo de la ingesta por
+lotes); (4) desplegar la API en un entorno remoto para la defensa del TFM.

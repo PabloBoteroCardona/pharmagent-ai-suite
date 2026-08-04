@@ -1,12 +1,25 @@
 # AGENTS.md — PharmAgent AI Suite
 
-Especificación de los agentes construidos sobre el **Google Agent Development Kit (ADK)**.
-Cada agente vive tras un puerto de dominio (`src/domain/services`) y se implementa como
-adaptador concreto en `src/adapters/adk/`, siguiendo Clean Architecture: el dominio no conoce
-detalles de ADK, modelos o proveedores — solo interfaces.
+Especificación de los tres agentes de PharmAgent AI Suite.
 
-Las herramientas (`tools`) que invocan estos agentes están definidas con esquemas Pydantic v2
-en [SKILLS.md](SKILLS.md).
+**Estado real de la implementación** (actualizado tras [BLOQUE B]/[BLOQUE C], ver
+[.memory/DECISIONS.md](.memory/DECISIONS.md)): los agentes **no** se implementan sobre el
+Google Agent Development Kit (`LlmAgent`, tool-calling declarativo) — se implementan como
+clases Python asíncronas simples en `src/application/agents/`, orquestando directamente los
+clientes concretos (`GeminiClient`, `OllamaClient`) a través de puertos de dominio
+(`src/domain/ports/`, `typing.Protocol`). La inversión de dependencias (DIP) se consigue así
+sin necesitar el framework ADK: `src/application/` depende únicamente de las interfaces de
+`src/domain/ports/`, nunca de las clases concretas de `src/infrastructure/`. `google-genai`
+(el SDK base de Gemini, no el framework ADK completo) se usa directamente en `GeminiClient`.
+Esta es una simplificación deliberada de alcance frente al diseño original de este documento
+— la sección "Tipo ADK"/tool-calling de cada agente describe el diseño conceptual objetivo,
+no el mecanismo de invocación real actual (invocación directa de métodos Python `async`).
+
+Las herramientas (`tools`) descritas conceptualmente en [SKILLS.md](SKILLS.md) documentan el
+contrato de entrada/salida objetivo; la implementación real expone un contrato equivalente
+pero más simple vía esquemas Pydantic REST en
+[drug_schemas.py](src/infrastructure/api/schemas/drug_schemas.py) — ver la nota de "Estado
+real" en cada sección de SKILLS.md para el detalle de las diferencias.
 
 ---
 
@@ -17,11 +30,11 @@ escaneo o PDF) mediante comprensión multimodal.
 
 | Campo | Valor |
 |---|---|
-| **Modelo** | `gemini-1.5-pro` (multimodal, vía Google GenAI SDK) |
-| **Tipo ADK** | `LlmAgent` con `Content` multimodal (imagen + texto) |
-| **Ubicación** | `src/adapters/adk/prescription_agent.py` |
-| **Puerto de dominio** | `src/domain/services/prescription_extraction_service.py` (interfaz) |
-| **Herramienta principal** | `extract_prescription_from_image` (ver SKILLS.md) |
+| **Modelo** | `gemini-1.5-pro` (multimodal, vía `google-genai`) — implementado ✅ |
+| **Tipo de invocación** | Llamada directa a `client.aio.models.generate_content()` con `Part.from_bytes` (imagen) + prompt de sistema; `response_mime_type="application/json"` fuerza salida estructurada. Sin capa ADK/tool-calling. |
+| **Ubicación real** | [`src/application/agents/prescription_agent.py`](src/application/agents/prescription_agent.py) (orquestador) + [`src/infrastructure/external/gemini_client.py`](src/infrastructure/external/gemini_client.py) (`GeminiClient`, cliente concreto) |
+| **Puerto de dominio** | [`PrescriptionVisionPort`](src/domain/ports/drug_ports.py) (`typing.Protocol`) — `GeminiClient` lo satisface estructuralmente |
+| **Endpoint REST** | `POST /api/v1/pharmacy/analyze-prescription` (`UploadFile`) en `pharmacy_router.py` |
 | **Modo de ejecución** | Remoto (API de Google), latencia tolerable para flujo síncrono de subida de receta |
 
 ### Responsabilidades
@@ -42,17 +55,24 @@ escaneo o PDF) mediante comprensión multimodal.
 > Responde exclusivamente invocando la herramienta `extract_prescription_from_image`.
 
 ### Entradas / salidas
-- **Entrada**: imagen (`image/jpeg`, `image/png` o `application/pdf`), `patient_id` opcional.
-- **Salida**: `PrescriptionExtractionResult` (ver SKILLS.md) consumido por el caso de uso
-  `src/use_cases/process_prescription.py`.
+- **Entrada real**: `image_bytes: bytes`, `mime_type: str` (por defecto `image/jpeg`) — vía
+  `UploadFile` en el endpoint REST. `patient_id` y el diseño multi-campo con
+  `confidence_score` por campo (`PrescriptionExtractionResult` en SKILLS.md) son el contrato
+  objetivo, **no implementado todavía**.
+- **Salida real**: `{"drugs": [{"farmaco", "dosificacion", "frecuencia", "duracion"}],
+  "advertencias": [str]}` (ver `PrescriptionAnalysisResponse` en
+  [drug_schemas.py](src/infrastructure/api/schemas/drug_schemas.py)) — un subconjunto más
+  simple del contrato objetivo de SKILLS.md, sin `confidence_score`,
+  `requires_manual_review` ni normalización de principio activo todavía.
 
 ### Consideraciones de seguridad y cumplimiento
-- Las imágenes de recetas contienen datos de salud (categoría especial, RGPD/LOPDGDD).
-  No se persisten en logs ni se envían a servicios de telemetría (ver
-  `src/infrastructure/observability`).
-- Toda extracción con `confidence_score` por debajo del umbral configurado
-  (`PRESCRIPTION_MIN_CONFIDENCE`, `.env`) debe enrutarse a revisión manual antes de continuar
-  el flujo hacia `SafetyCheckAgent`.
+- Las imágenes de recetas contienen datos de salud (categoría especial, RGPD/LOPDGDD). El
+  cliente HTTP no persiste la imagen en disco ni en logs; **pendiente**: no hay todavía una
+  capa de observabilidad que filtre explícitamente PII de las trazas de Sentry (BLOQUE B solo
+  cablea la captura de errores a nivel de aplicación, sin scrubbing específico de este flujo).
+- El umbral de confianza (`PRESCRIPTION_MIN_CONFIDENCE`) y el enrutado a revisión manual
+  descritos como diseño objetivo **no están implementados**: hoy `GeminiClient` no calcula ni
+  devuelve ningún `confidence_score`.
 
 ---
 
@@ -63,44 +83,51 @@ seguridad a partir de la lista de fármacos ya extraída.
 
 | Campo | Valor |
 |---|---|
-| **Modelo** | `llama-3.1` (despliegue local, p. ej. vía Ollama/vLLM) con *fallback* a `gemini-1.5-pro` |
-| **Tipo ADK** | `LlmAgent` con `tool_choice` forzado a `check_drug_interactions` |
-| **Ubicación** | `src/adapters/adk/safety_check_agent.py` |
-| **Puerto de dominio** | `src/domain/services/drug_safety_service.py` (interfaz) |
-| **Herramienta principal** | `check_drug_interactions` (ver SKILLS.md) |
-| **Modo de ejecución** | Preferentemente local (datos clínicos sensibles, baja latencia, sin
-  dependencia de red externa); Gemini solo como *fallback* si el modelo local no está
-  disponible, nunca como ruta por defecto para reducir exposición de datos de salud |
+| **Modelo** | Ninguno — regla determinista sobre una base de interacciones curada en memoria (**no LLM** en la implementación actual; el diseño objetivo de `llama-3.1` local con *fallback* a Gemini queda como trabajo futuro, ver limitación aceptada en [.memory/DECISIONS.md](.memory/DECISIONS.md)) |
+| **Tipo de invocación** | Método Python síncrono puro (`check_interactions`), sin llamada a red ni a ningún modelo |
+| **Ubicación real** | [`src/application/agents/safety_agent.py`](src/application/agents/safety_agent.py) |
+| **Puerto de dominio** | Ninguno — no depende de infraestructura externa; usa directamente la entidad de dominio `DrugInteraction` ([drug_interaction.py](src/domain/models/drug_interaction.py)) |
+| **Endpoint REST** | `POST /api/v1/pharmacy/check-interactions` en `pharmacy_router.py` |
+| **Modo de ejecución** | 100% local, sin dependencia de red externa (cumple el objetivo de privacidad del diseño original, aunque por ausencia de LLM y no por *fallback* controlado) |
 
 ### Responsabilidades
-- Recibir la lista normalizada de principios activos (salida de `PrescriptionAgent`) más,
-  opcionalmente, la medicación crónica del paciente.
-- Consultar la base de interacciones (vía la herramienta `check_drug_interactions`, que
-  encapsula el acceso a la fuente de datos — AEMPS/CIMA u otra base curada).
-- Clasificar cada interacción encontrada por severidad (`leve`, `moderada`, `grave`,
-  `contraindicada`) y explicar el mecanismo farmacológico de forma comprensible.
+- Recibir una lista de nombres de fármacos (texto libre, p. ej. salida de `PrescriptionAgent`
+  o introducidos manualmente) y normalizarlos (minúsculas, recorte de espacios) para
+  comparación por subcadena contra la base curada.
+- Evaluar cada par conocido de la base curada (`_KNOWN_INTERACTIONS`, 6 interacciones
+  clínicamente documentadas) y devolver las que apliquen, con severidad
+  (`LOW`/`MEDIUM`/`HIGH`/`SEVERE`, `InteractionSeverity` de dominio) y recomendación clínica.
 - Emitir una recomendación explícita: `apto`, `apto_con_precaucion` o `requiere_revision_medica`.
-- **Nunca** aprobar silenciosamente una combinación — ante ambigüedad o datos insuficientes,
-  el veredicto por defecto es `requiere_revision_medica`.
+- **Nunca** aprobar silenciosamente una combinación con interacción `HIGH`/`SEVERE` — el
+  veredicto en ese caso es siempre `requiere_revision_medica`.
 
-### Instrucciones del sistema (resumen)
-> Eres un sistema de verificación de seguridad farmacológica. Tu prioridad absoluta es la
-> seguridad del paciente sobre la conveniencia. Ante cualquier duda o falta de evidencia
-> suficiente, clasifica el caso como `requiere_revision_medica`. Nunca minimices una
-> interacción grave. Justifica siempre tu veredicto citando la interacción concreta detectada
-> por la herramienta `check_drug_interactions`; no generes interacciones que la herramienta
-> no haya devuelto.
+**Limitación aceptada**: la base curada es mínima y demostrativa (fines de TFM), no una base
+de datos de interacciones clínica completa — no existe un endpoint de interacciones en
+CIMA/AEMPS que sustituirla directamente. Ampliarla, o sustituirla por un LLM local con
+conocimiento farmacológico (diseño original de esta sección), queda fuera de alcance de los
+bloques ejecutados hasta ahora.
+
+### Principio rector (equivalente al prompt de sistema del diseño original)
+> Prioridad absoluta: la seguridad del paciente sobre la conveniencia. Ante cualquier
+> interacción `HIGH`/`SEVERE` conocida, el veredicto nunca es `apto` — es siempre
+> `requiere_revision_medica`. El agente solo reporta interacciones presentes en la base
+> curada; no infiere ni extrapola interacciones no documentadas en ella.
 
 ### Entradas / salidas
-- **Entrada**: `List[NormalizedDrug]` + `patient_context` opcional (edad, alergias,
-  medicación crónica, embarazo/lactancia si aplica).
-- **Salida**: `DrugInteractionReport` (ver SKILLS.md) consumido por
-  `src/use_cases/validate_prescription_safety.py`.
+- **Entrada real**: `drugs: list[str]` (mínimo 2, ver `InteractionCheckRequest` en
+  [drug_schemas.py](src/infrastructure/api/schemas/drug_schemas.py)). El diseño objetivo con
+  `patient_context` (edad, alergias, medicación crónica, embarazo/lactancia) **no está
+  implementado**.
+- **Salida real**: `{"interactions": [{"primary_drug", "secondary_drug", "severity",
+  "description", "clinical_recommendation"}], "verdict"}` (`InteractionCheckResponse`) — no
+  hay todavía caso de uso explícito en `src/use_cases/` para este flujo (el router llama al
+  agente directamente), a diferencia de `ConsultDrugRAGUseCase` para `RAGPharmAgent`.
 
 ### Consideraciones de seguridad y cumplimiento
-- Al ejecutarse localmente por defecto, minimiza la salida de datos clínicos hacia terceros.
-- Todo veredicto y su justificación se persisten de forma auditable (trazabilidad clínica),
-  sin almacenar el prompt completo si contiene PII más allá de lo necesario.
+- Al ejecutarse 100% en memoria local, no hay salida de datos clínicos hacia terceros.
+- **Pendiente**: no hay persistencia auditable del veredicto todavía (cada llamada es
+  *stateless*); el diseño objetivo de trazabilidad clínica persistida queda para un bloque
+  futuro.
 
 ---
 
@@ -111,66 +138,81 @@ medicamentos (AEMPS/CIMA) mediante *Retrieval-Augmented Generation*.
 
 | Campo | Valor |
 |---|---|
-| **Modelo** | `gemma-2` (despliegue local) |
-| **Tipo ADK** | `LlmAgent` con herramienta de recuperación (`search_cima_official_data`) precediendo a la generación |
-| **Ubicación** | `src/adapters/adk/rag_pharm_agent.py` |
-| **Puerto de dominio** | `src/domain/services/pharma_knowledge_service.py` (interfaz) |
-| **Herramienta principal** | `search_cima_official_data` (ver SKILLS.md) |
-| **Fuente primaria** | API REST oficial de la AEMPS (`https://cima.aemps.es/cima/rest/...`), vía `src/infrastructure/external/cima_client.py`, consultada en tiempo real |
-| **Fuente secundaria / caché** | PostgreSQL + `pgvector` (`src/adapters/rag/`), indexada de forma incremental a partir de las respuestas de CIMA en vivo; usada como *fallback* si CIMA no responde |
-| **Modo de ejecución** | Generación local (consultas frecuentes, coste marginal bajo); recuperación combina llamada remota a CIMA (fuente de verdad) y caché vectorial local (baja latencia / resiliencia) |
+| **Modelo** | Ollama local: `llama3` para generación, `nomic-embed-text` (768 dim) para embeddings — **no** `gemma-2` como decía el diseño original (ver [.memory/DECISIONS.md](.memory/DECISIONS.md), "Embeddings exclusivamente locales") |
+| **Tipo de invocación** | Método Python asíncrono (`answer_consultation`), sin capa ADK/tool-calling |
+| **Ubicación real** | [`src/application/agents/pharmacy_agent.py`](src/application/agents/pharmacy_agent.py) (`RAGPharmAgent`), orquestado por [`ConsultDrugRAGUseCase`](src/use_cases/consult_drug_rag.py) |
+| **Puerto de dominio** | `LanguageModelPort` (generación/embeddings) + `DrugService` (aplicación) sobre `CimaDataSourcePort`/`DrugRepositoryPort` ([drug_ports.py](src/domain/ports/drug_ports.py)) |
+| **Endpoint REST** | `POST /api/v1/pharmacy/consult` en `pharmacy_router.py` |
+| **Fuente de recuperación real** | **Solo la caché vectorial local** (`pgvector`, vía `DrugService.search_drugs_semantic`) — **corrección importante sobre el diseño original**: `/consult` no consulta CIMA en vivo en el momento de la pregunta. CIMA en vivo se consulta únicamente durante la **ingesta por lotes** (`scripts/ingest_drugs.py` → `DrugService.fetch_and_index_drug`), que puebla la caché de antemano. La estrategia dual "CIMA en vivo primero, caché como *fallback*" descrita más abajo es el diseño objetivo, no el comportamiento actual. |
+| **Modo de ejecución** | 100% local en el momento de la consulta (generación + recuperación); la actualización de la caché desde CIMA es un proceso separado y asíncrono respecto a la consulta del usuario |
 
 ### Responsabilidades
 - Recibir la pregunta del usuario (profesional sanitario o paciente) sobre un medicamento.
-- Invocar `search_cima_official_data` para recuperar los fragmentos más relevantes —
-  primero contra `cima.aemps.es` en tiempo real; si no responde, contra la caché vectorial —
-  de la ficha técnica o el prospecto (posología, contraindicaciones, efectos adversos,
-  excipientes, condiciones de conservación, etc.).
-- Generar una respuesta **basada exclusivamente en los fragmentos recuperados**, citando el
-  medicamento y la sección de la ficha técnica de origen.
-- Si ni CIMA en vivo ni la caché vectorial devuelven resultados con similitud suficiente,
-  responder que no dispone de información verificada en lugar de generar una respuesta no
-  fundamentada.
+- Recuperar los 3 fármacos semánticamente más similares de la caché vectorial local
+  (`DrugService.search_drugs_semantic`, embedding de la consulta + `pgvector.l2_distance`).
+- Generar una respuesta **basada exclusivamente en los fragmentos recuperados** (nombre,
+  principios activos, prospecto) vía el `system_prompt` grounded de `OllamaClient`.
+- Si la caché no devuelve ningún fármaco relevante, el `system_prompt` indica explícitamente
+  la ausencia de contexto en lugar de generar una respuesta no fundamentada — pero, a
+  diferencia del diseño objetivo, no hay un campo `grounded: bool` explícito en la salida
+  todavía; la ausencia de fuentes se refleja solo en `sources: []`.
 
-### Instrucciones del sistema (resumen)
-> Eres un asistente de consulta de fichas técnicas de medicamentos autorizados en España
-> (AEMPS/CIMA). Responde únicamente con información contenida en los fragmentos recuperados
-> por `search_cima_official_data`. Si los fragmentos no contienen la respuesta, indica
-> explícitamente que no hay información verificada disponible; no completes con
-> conocimiento general no verificado. Cita siempre el nombre del medicamento y la sección de
-> la ficha técnica utilizada.
+**Diseño objetivo pendiente** (`search_cima_official_data`, dos fuentes con CIMA en vivo como
+primaria por consulta): requeriría que `RAGPharmAgent`/`DrugService` invoquen
+`CimaAPIClient` de forma síncrona a la consulta del usuario, no solo en la ingesta — fuera de
+alcance de los bloques ejecutados hasta ahora.
+
+### Principio rector (equivalente al prompt de sistema del diseño original)
+> Responde únicamente con la información técnica del contexto recuperado (nombre, principios
+> activos, prospecto de los fármacos más relevantes de la caché). No completes con
+> conocimiento general no verificado ni inventes datos que no estén en el contexto. Si el
+> contexto no contiene información suficiente, indica explícitamente que no dispones de
+> información verificada y recomienda consultar a un profesional sanitario. Ver
+> `SYSTEM_PROMPT` en [pharmacy_agent.py](src/application/agents/pharmacy_agent.py) para el
+> texto exacto usado en producción.
 
 ### Entradas / salidas
-- **Entrada**: `query: str`, `drug_name` y `nregistro` opcionales para acotar la búsqueda.
-- **Salida**: `RAGAnswer` (ver SKILLS.md), con `answer`, `sources` (lista de fragmentos y
-  metadatos, incluyendo si proceden de CIMA en vivo o de la caché) y `grounded: bool`
-  indicando si la respuesta está respaldada por recuperación.
-- Consumido por `src/use_cases/answer_pharma_query.py`.
+- **Entrada real**: `query: str` (`ConsultationRequest`). `drug_name`/`nregistro` para acotar
+  la búsqueda **no están implementados** — la recuperación siempre es semántica sobre toda la
+  caché.
+- **Salida real**: `{"query", "response", "sources": [nombre_farmaco, ...]}`
+  (`ConsultationResponse`) — más simple que el `RAGAnswer` objetivo: `sources` es una lista de
+  nombres, no de fragmentos con metadatos, y no hay campo `grounded: bool` explícito.
+- Consumido por [`ConsultDrugRAGUseCase`](src/use_cases/consult_drug_rag.py) (caso de uso
+  real, sí implementado, a diferencia del nombre `answer_pharma_query.py` del diseño
+  original).
 
 ### Consideraciones de seguridad y cumplimiento
-- No sustituye el prospecto oficial ni el criterio de un profesional sanitario; toda
-  respuesta debe incluir el aviso correspondiente (gestionado en la capa de presentación,
-  `src/infrastructure/api/routers`).
-- Las llamadas en vivo quedan restringidas exclusivamente al dominio oficial
-  `cima.aemps.es` — la URL base del cliente HTTP no es parametrizable desde la entrada de la
-  tool (ver SKILLS.md).
-- La caché vectorial se alimenta únicamente de respuestas ya validadas de CIMA en vivo
-  (nunca de generación del propio LLM); el agente solo la consulta, no escribe en ella
-  directamente (principio de menor privilegio).
+- No sustituye el prospecto oficial ni el criterio de un profesional sanitario.
+  **Pendiente**: el aviso explícito al usuario final sobre esta limitación no está
+  implementado todavía en la capa de presentación (`pharmacy_router.py` devuelve la
+  respuesta del LLM sin un disclaimer añadido).
+- Las llamadas en vivo a CIMA (`CimaAPIClient`) quedan restringidas exclusivamente al dominio
+  oficial `cima.aemps.es` (`settings.cima_base_url`, no parametrizable desde la entrada de
+  ningún endpoint).
+- La caché vectorial se alimenta únicamente desde el script de ingesta
+  (`scripts/ingest_drugs.py`), nunca desde la generación del propio LLM.
 
 ---
 
 ## Convenciones comunes a los tres agentes
 
-- **Orquestación**: los tres agentes se registran como *tools* de un agente orquestador de
-  nivel superior (o se invocan secuencialmente desde los casos de uso), nunca se acoplan
-  entre sí directamente — la composición vive en `src/use_cases/`.
-- **Contratos**: toda entrada/salida entre el dominio y un agente ADK pasa por los esquemas
-  Pydantic v2 definidos en [SKILLS.md](SKILLS.md); ningún agente devuelve texto libre sin
-  validar al dominio.
-- **Observabilidad**: cada invocación se traza con Sentry (`src/infrastructure/observability`)
-  registrando latencia, modelo usado y resultado (éxito/fallback/error), sin registrar PII de
-  salud en claro.
-- **Configuración**: nombres de modelo, endpoints locales y umbrales de confianza se leen de
-  variables de entorno (`.env`, ver `.env.example`) a través de
-  `src/infrastructure/config`, nunca hardcodeados en el adaptador.
+- **Orquestación real**: cada agente se invoca directamente desde su propio endpoint REST en
+  `pharmacy_router.py`, vía la cadena de dependencias FastAPI (`Depends`). Solo
+  `RAGPharmAgent` pasa por un caso de uso explícito en `src/use_cases/`
+  (`ConsultDrugRAGUseCase`); `PrescriptionAgent` y `SafetyCheckAgent` son invocados
+  directamente por el router. No existe todavía un agente orquestador de nivel superior que
+  los componga entre sí (p. ej. receta → extracción → verificación de interacciones en un
+  único flujo) — es trabajo futuro.
+- **Contratos reales**: toda entrada/salida pasa por los esquemas Pydantic v2 de
+  [drug_schemas.py](src/infrastructure/api/schemas/drug_schemas.py) (contrato REST real,
+  más simple que los esquemas de *tool* de [SKILLS.md](SKILLS.md), que documentan el diseño
+  objetivo).
+- **Observabilidad real**: Sentry está cableado a nivel de aplicación
+  ([main.py](src/infrastructure/api/main.py), BLOQUE B) — captura errores no controlados de
+  cualquier endpoint. **Pendiente**: no hay todavía trazas por invocación de agente
+  individual (latencia, modelo usado, éxito/fallback) como describía el diseño original.
+- **Configuración real**: nombres de modelo (`gemini-1.5-pro`, `llama3`,
+  `nomic-embed-text`) y endpoints (`OLLAMA_BASE_URL`, `CIMA_BASE_URL`, `GOOGLE_API_KEY`) se
+  leen de `src/infrastructure/config/settings.py` (`pydantic-settings`, BLOQUE A) — ya
+  implementado, no pendiente.
