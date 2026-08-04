@@ -177,23 +177,53 @@ o si `patient_context` es `None` y hay medicación crónica desconocida, el `ver
 
 ---
 
-## 3. `search_cima_vector_db`
+## 3. `search_cima_official_data`
 
 Usada por **RAGPharmAgent** ([AGENTS.md](AGENTS.md#3-ragpharmagent)).
 
-**Trigger**: invocar cuando el usuario realice una pregunta específica sobre posología,
-contraindicaciones, excipientes o condiciones de conservación de un fármaco concreto.
+Sustituye a la antigua `search_cima_vector_db`, ahora únicamente vector-first, por una
+estrategia de **dos fuentes**:
 
-**Guardrail / Filtro**: no invocar ante saludos, consultas administrativas (p. ej. estado
-de un pedido, datos de contacto) o cuando el contexto de la conversación ya contiene la
-ficha técnica requerida para responder — evita recuperaciones redundantes.
+- **Fuente primaria — CIMA en vivo**: consulta directamente los endpoints oficiales REST de
+  la AEMPS (`https://cima.aemps.es/cima/rest/...`) vía
+  [`CimaAPIClient`](src/infrastructure/external/cima_client.py) para obtener ficha técnica,
+  prospecto, composición y condiciones de prescripción en tiempo real. Es la fuente de
+  verdad: si responde, su resultado prevalece sobre la caché.
+- **Fuente secundaria / caché — `pgvector`**: cada prospecto/ficha técnica obtenido en vivo
+  se indexa de forma asíncrona en la base vectorial local (`src/adapters/rag/`) para permitir
+  búsquedas semánticas (RAG) rápidas sobre apartados específicos en consultas futuras, y para
+  servir de *fallback* si `cima.aemps.es` no responde (timeout, error 5xx, mantenimiento).
+
+**Trigger**: invocar cuando:
+- el usuario realice una consulta sobre posología, contraindicaciones, excipientes,
+  interacciones específicas o condiciones de conservación de un fármaco concreto;
+- tras identificar un medicamento en una receta extraída (`PrescriptionExtractionResult`)
+  que requiera verificación contra su ficha técnica oficial.
+
+**Guardrail / Filtro**:
+- no invocar ante saludos, consultas no farmacéuticas o administrativas (p. ej. estado de un
+  pedido, datos de contacto), ni cuando el contexto de la conversación ya incluye la ficha
+  técnica oficial requerida para responder — evita llamadas y recuperaciones redundantes;
+- la búsqueda queda restringida exclusivamente al dominio oficial `cima.aemps.es`: el cliente
+  HTTP nunca acepta una base URL distinta en tiempo de ejecución (`CIMA_BASE_URL` está fijada
+  en el adaptador, no es parametrizable desde la entrada de la tool), y todo `source_url`
+  devuelto se valida contra ese dominio antes de exponerse al agente.
 
 ```python
-from pydantic import BaseModel, ConfigDict, Field
+from enum import Enum
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+CIMA_OFFICIAL_DOMAIN = "https://cima.aemps.es/"
 
 
-class SearchCimaVectorDbInput(BaseModel):
-    """Entrada de la tool: consulta a recuperar de la base vectorial de fichas técnicas."""
+class CimaDataSource(str, Enum):
+    CIMA_LIVE = "cima_live"
+    VECTOR_CACHE = "vector_cache"
+
+
+class SearchCimaOfficialDataInput(BaseModel):
+    """Entrada de la tool: consulta sobre datos oficiales de un medicamento."""
 
     model_config = ConfigDict(strict=True)
 
@@ -201,58 +231,84 @@ class SearchCimaVectorDbInput(BaseModel):
     drug_name: str | None = Field(
         default=None, description="Nombre del medicamento para acotar la búsqueda, si se conoce."
     )
-    top_k: int = Field(default=5, ge=1, le=20)
+    nregistro: str | None = Field(
+        default=None, description="Número de registro CIMA, si ya se conoce (evita una búsqueda previa por nombre)."
+    )
+    top_k: int = Field(default=5, ge=1, le=20, description="Fragmentos máximos a devolver desde la caché vectorial.")
     min_similarity: float = Field(
-        default=0.7, ge=0.0, le=1.0, description="Umbral mínimo de similitud coseno para incluir un fragmento."
+        default=0.7, ge=0.0, le=1.0, description="Umbral mínimo de similitud coseno para un fragmento cacheado."
     )
 
 
-class CimaChunk(BaseModel):
-    """Un fragmento recuperado de una ficha técnica AEMPS/CIMA."""
+class CimaFragment(BaseModel):
+    """Un fragmento de información oficial sobre un medicamento, en vivo o cacheado."""
 
     model_config = ConfigDict(strict=True)
 
     drug_name: str
-    cima_code: str = Field(..., description="Código nacional / código CIMA del medicamento.")
-    section: str = Field(..., description="Sección de la ficha técnica, p. ej. '4.3 Contraindicaciones'.")
+    cima_code: str = Field(..., description="Número de registro / código CIMA del medicamento.")
+    section: str = Field(..., description="Sección de la ficha técnica o prospecto, p. ej. '4.3 Contraindicaciones'.")
     text: str
-    similarity: float = Field(..., ge=0.0, le=1.0)
+    source: CimaDataSource
+    source_url: str = Field(..., description="URL del endpoint oficial de cima.aemps.es del que procede el fragmento.")
+    similarity: float | None = Field(
+        default=None, ge=0.0, le=1.0, description="Similitud coseno; solo se informa para fragmentos de VECTOR_CACHE."
+    )
+
+    @field_validator("source_url")
+    @classmethod
+    def restrict_to_aemps_domain(cls, v: str) -> str:
+        if not v.startswith(CIMA_OFFICIAL_DOMAIN):
+            raise ValueError(f"source_url debe pertenecer al dominio oficial {CIMA_OFFICIAL_DOMAIN}")
+        return v
 
 
-class SearchCimaVectorDbResult(BaseModel):
-    """Salida de la tool: fragmentos recuperados."""
+class SearchCimaOfficialDataResult(BaseModel):
+    """Salida de la tool: fragmentos oficiales recuperados, en vivo o desde caché."""
 
     model_config = ConfigDict(strict=True)
 
-    chunks: list[CimaChunk] = Field(default_factory=list)
+    fragments: list[CimaFragment] = Field(default_factory=list)
+    primary_source_available: bool = Field(
+        ..., description="True si cima.aemps.es respondió con éxito; False si se recurrió a la caché vectorial."
+    )
 
 
 class RAGAnswer(BaseModel):
-    """Respuesta final del RAGPharmAgent, tras generación fundamentada en `chunks`."""
+    """Respuesta final del RAGPharmAgent, tras generación fundamentada en `fragments`."""
 
     model_config = ConfigDict(strict=True)
 
     answer: str
-    sources: list[CimaChunk] = Field(default_factory=list)
+    sources: list[CimaFragment] = Field(default_factory=list)
     grounded: bool = Field(
-        ..., description="False si no se encontraron fragmentos con similitud suficiente para fundamentar la respuesta."
+        ..., description="False si ni CIMA en vivo ni la caché vectorial aportaron fragmentos para fundamentar la respuesta."
     )
 ```
 
-**Regla de negocio**: si `SearchCimaVectorDbResult.chunks` está vacío o todos sus elementos
-quedan por debajo de `min_similarity`, el agente debe devolver `RAGAnswer.grounded = False`
-y una respuesta que indique explícitamente la ausencia de información verificada, en lugar de
-generar contenido no respaldado por recuperación.
+**Reglas de negocio**:
+- si la consulta en vivo a `cima.aemps.es` falla (`httpx.HTTPError`, capturado en
+  [`CimaAPIClient`](src/infrastructure/external/cima_client.py), que devuelve `[]`/`None` en
+  lugar de propagar la excepción), la tool recurre automáticamente a la caché vectorial y
+  marca `primary_source_available = False`, sin interrumpir el flujo del agente;
+- si `SearchCimaOfficialDataResult.fragments` queda vacío (ni CIMA en vivo ni la caché
+  devolvieron nada, o los resultados cacheados quedan por debajo de `min_similarity`), el
+  agente debe devolver `RAGAnswer.grounded = False` y una respuesta que indique
+  explícitamente la ausencia de información verificada, en lugar de generar contenido no
+  respaldado por recuperación;
+- toda respuesta obtenida de `CIMA_LIVE` con éxito dispara, de forma asíncrona y no
+  bloqueante para la respuesta al usuario, la indexación del fragmento en `pgvector`
+  (mantenimiento de la caché descrito arriba).
 
 ---
 
 ## Ubicación en el código
 
-| Tool | Adaptador ADK | Puerto de dominio |
-|---|---|---|
-| `extract_prescription_from_image` | `src/adapters/adk/tools/prescription_tool.py` | `src/domain/services/prescription_extraction_service.py` |
-| `check_drug_interactions` | `src/adapters/adk/tools/safety_tool.py` | `src/domain/services/drug_safety_service.py` |
-| `search_cima_vector_db` | `src/adapters/adk/tools/rag_tool.py` | `src/domain/services/pharma_knowledge_service.py` |
+| Tool | Adaptador ADK | Puerto de dominio | Fuentes |
+|---|---|---|---|
+| `extract_prescription_from_image` | `src/adapters/adk/tools/prescription_tool.py` | `src/domain/services/prescription_extraction_service.py` | — |
+| `check_drug_interactions` | `src/adapters/adk/tools/safety_tool.py` | `src/domain/services/drug_safety_service.py` | — |
+| `search_cima_official_data` | `src/adapters/adk/tools/rag_tool.py` | `src/domain/services/pharma_knowledge_service.py` | `src/infrastructure/external/cima_client.py` (primaria, en vivo) + `src/adapters/rag/` (`pgvector`, secundaria/caché) |
 
 Los modelos de este documento se implementan como código real en
 `src/domain/models/` (los que representan conceptos de dominio, p. ej. `DrugInteractionReport`)
