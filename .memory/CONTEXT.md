@@ -16,6 +16,17 @@ y [SKILLS.md](../SKILLS.md) para el detalle de agentes y herramientas.
 
 ## Último hito verificado
 
+**PASO 22 — `DrugService` creado.**
+[src/application/services/drug_service.py](../src/application/services/drug_service.py)
+orquesta CIMA, Ollama y PostgreSQL: `fetch_and_index_drug(nregistro)` (consulta CIMA,
+compone texto de nombre+principios activos+prospecto, genera embedding vía
+`OllamaClient.generate_embedding` y persiste con `DrugRepository.save_drug`) y
+`search_drugs_semantic(query, limit)` (embedding de la consulta +
+`DrugRepository.search_similar_by_vector`, con corte defensivo a `[]` si el embedding
+falla). Validado end-to-end contra CIMA y Ollama reales (con un repositorio *stub*, ya que
+la escritura real en Postgres sigue bloqueada por el bug de `asyncpg`/Windows — ver
+[BUGS.md](BUGS.md)): el medicamento nregistro=80298 se obtuvo y compuso correctamente.
+
 **Fase 3 (Infraestructura Local) completa.** Hitos verificados:
 
 - Cliente HTTP asíncrono `CimaAPIClient`
@@ -42,5 +53,6 @@ y [SKILLS.md](../SKILLS.md) para el detalle de agentes y herramientas.
 
 ## Siguiente paso pendiente
 
-**PASO 22** — Implementar `DrugService` en `src/application/services/drug_service.py` para
-orquestar la ingesta, indexación semántica y búsquedas RAG entre CIMA, Ollama y PostgreSQL.
+**PASO 23** — Sin definir todavía; pendiente de concretar en el roadmap (candidatos: exponer
+`DrugService` vía endpoint FastAPI, o implementar el primer agente ADK —
+`RAGPharmAgent` — consumiéndolo).
