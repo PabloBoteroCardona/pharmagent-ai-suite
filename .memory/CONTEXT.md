@@ -12,9 +12,26 @@ y [SKILLS.md](../SKILLS.md) para el detalle de agentes y herramientas.
 
 ## Estado actual
 
-**Fase 4 — Casos de Uso y Agentes de IA.**
+**Fase 5 — API REST y Exposición de Servicios.**
 
 ## Último hito verificado
+
+**PASO 24 — Esquemas y endpoints REST con FastAPI creados.**
+- [src/infrastructure/api/schemas/drug_schemas.py](../src/infrastructure/api/schemas/drug_schemas.py):
+  `DrugSearchQuery` (`query`, `limit=5`), `ConsultationRequest` (`query`),
+  `ConsultationResponse` (`query`, `response`, `sources`).
+- [src/infrastructure/api/routers/pharmacy_router.py](../src/infrastructure/api/routers/pharmacy_router.py):
+  `POST /api/v1/pharmacy/search` (llama a `DrugService.search_drugs_semantic`) y
+  `POST /api/v1/pharmacy/consult` (llama a `RAGPharmAgent.answer_consultation`, devuelve
+  `ConsultationResponse`). Cadena de dependencias FastAPI (`Depends`) construye
+  `CimaAPIClient` → `OllamaClient` → `DrugRepository` (vía `get_db_session`) →
+  `DrugService` → `RAGPharmAgent` por request.
+- [src/infrastructure/api/main.py](../src/infrastructure/api/main.py): `app = FastAPI(...)`,
+  incluye `pharmacy_router`, y `GET /health` → `{"status": "ok"}`.
+- Validado end-to-end con `fastapi.testclient.TestClient`: `/health` (200), `/search` (200,
+  `[]` porque Ollama no tiene modelo descargado en este entorno) y `/consult` (200,
+  `response` vacía por el mismo motivo) — confirma que toda la cadena de dependencias, rutas
+  y esquemas Pydantic queda correctamente cableada.
 
 **PASO 23 — `RAGPharmAgent` creado.**
 [src/application/agents/pharmacy_agent.py](../src/application/agents/pharmacy_agent.py):
@@ -64,5 +81,4 @@ la escritura real en Postgres sigue bloqueada por el bug de `asyncpg`/Windows �
 
 ## Siguiente paso pendiente
 
-**PASO 24** — Endpoints REST con FastAPI (exponer `DrugService` y `RAGPharmAgent` en
-`src/infrastructure/api/routers/`).
+**PASO 25** — Documentación y ejecución del servidor con Uvicorn.
