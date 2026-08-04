@@ -16,6 +16,17 @@ y [SKILLS.md](../SKILLS.md) para el detalle de agentes y herramientas.
 
 ## Último hito verificado
 
+**PASO 23 — `RAGPharmAgent` creado.**
+[src/application/agents/pharmacy_agent.py](../src/application/agents/pharmacy_agent.py):
+`answer_consultation(query)` busca fármacos relevantes con
+`DrugService.search_drugs_semantic(query, limit=3)`, compone un contexto (nombre,
+principios activos, secciones del prospecto) con un system prompt grounded que exige
+responder solo con esa información técnica o remitir a un profesional sanitario si falta,
+genera la respuesta con `OllamaClient.generate_completion` y devuelve
+`{"query", "response", "sources"}` (`sources` = nombres de los fármacos usados como
+contexto). Validado con un `DrugService` *stub* + `OllamaClient` real: estructura del dict,
+orden de `sources` y degradación correcta a `sources: []` sin contexto, verificados.
+
 **PASO 22 — `DrugService` creado.**
 [src/application/services/drug_service.py](../src/application/services/drug_service.py)
 orquesta CIMA, Ollama y PostgreSQL: `fetch_and_index_drug(nregistro)` (consulta CIMA,
@@ -53,6 +64,5 @@ la escritura real en Postgres sigue bloqueada por el bug de `asyncpg`/Windows �
 
 ## Siguiente paso pendiente
 
-**PASO 23** — Sin definir todavía; pendiente de concretar en el roadmap (candidatos: exponer
-`DrugService` vía endpoint FastAPI, o implementar el primer agente ADK —
-`RAGPharmAgent` — consumiéndolo).
+**PASO 24** — Endpoints REST con FastAPI (exponer `DrugService` y `RAGPharmAgent` en
+`src/infrastructure/api/routers/`).
