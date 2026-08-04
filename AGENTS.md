@@ -112,43 +112,51 @@ medicamentos (AEMPS/CIMA) mediante *Retrieval-Augmented Generation*.
 | Campo | Valor |
 |---|---|
 | **Modelo** | `gemma-2` (despliegue local) |
-| **Tipo ADK** | `LlmAgent` con herramienta de recuperación (`search_cima_vector_db`) precediendo a la generación |
+| **Tipo ADK** | `LlmAgent` con herramienta de recuperación (`search_cima_official_data`) precediendo a la generación |
 | **Ubicación** | `src/adapters/adk/rag_pharm_agent.py` |
 | **Puerto de dominio** | `src/domain/services/pharma_knowledge_service.py` (interfaz) |
-| **Herramienta principal** | `search_cima_vector_db` (ver SKILLS.md) |
-| **Almacén vectorial** | PostgreSQL + `pgvector` (`src/adapters/rag/`), poblado offline a partir de las fichas técnicas públicas de AEMPS/CIMA |
-| **Modo de ejecución** | Local (consultas frecuentes, coste marginal bajo, sin necesidad de capacidad multimodal) |
+| **Herramienta principal** | `search_cima_official_data` (ver SKILLS.md) |
+| **Fuente primaria** | API REST oficial de la AEMPS (`https://cima.aemps.es/cima/rest/...`), vía `src/infrastructure/external/cima_client.py`, consultada en tiempo real |
+| **Fuente secundaria / caché** | PostgreSQL + `pgvector` (`src/adapters/rag/`), indexada de forma incremental a partir de las respuestas de CIMA en vivo; usada como *fallback* si CIMA no responde |
+| **Modo de ejecución** | Generación local (consultas frecuentes, coste marginal bajo); recuperación combina llamada remota a CIMA (fuente de verdad) y caché vectorial local (baja latencia / resiliencia) |
 
 ### Responsabilidades
 - Recibir la pregunta del usuario (profesional sanitario o paciente) sobre un medicamento.
-- Invocar `search_cima_vector_db` para recuperar los fragmentos más relevantes de la ficha
-  técnica (posología, contraindicaciones, efectos adversos, excipientes, condiciones de
-  conservación, etc.).
+- Invocar `search_cima_official_data` para recuperar los fragmentos más relevantes —
+  primero contra `cima.aemps.es` en tiempo real; si no responde, contra la caché vectorial —
+  de la ficha técnica o el prospecto (posología, contraindicaciones, efectos adversos,
+  excipientes, condiciones de conservación, etc.).
 - Generar una respuesta **basada exclusivamente en los fragmentos recuperados**, citando el
   medicamento y la sección de la ficha técnica de origen.
-- Si la base vectorial no devuelve resultados con similitud suficiente, responder que no
-  dispone de información verificada en lugar de generar una respuesta no fundamentada.
+- Si ni CIMA en vivo ni la caché vectorial devuelven resultados con similitud suficiente,
+  responder que no dispone de información verificada en lugar de generar una respuesta no
+  fundamentada.
 
 ### Instrucciones del sistema (resumen)
 > Eres un asistente de consulta de fichas técnicas de medicamentos autorizados en España
 > (AEMPS/CIMA). Responde únicamente con información contenida en los fragmentos recuperados
-> por `search_cima_vector_db`. Si los fragmentos no contienen la respuesta, indica
+> por `search_cima_official_data`. Si los fragmentos no contienen la respuesta, indica
 > explícitamente que no hay información verificada disponible; no completes con
 > conocimiento general no verificado. Cita siempre el nombre del medicamento y la sección de
 > la ficha técnica utilizada.
 
 ### Entradas / salidas
-- **Entrada**: `query: str`, `drug_name` opcional para acotar la búsqueda.
+- **Entrada**: `query: str`, `drug_name` y `nregistro` opcionales para acotar la búsqueda.
 - **Salida**: `RAGAnswer` (ver SKILLS.md), con `answer`, `sources` (lista de fragmentos y
-  metadatos) y `grounded: bool` indicando si la respuesta está respaldada por recuperación.
+  metadatos, incluyendo si proceden de CIMA en vivo o de la caché) y `grounded: bool`
+  indicando si la respuesta está respaldada por recuperación.
 - Consumido por `src/use_cases/answer_pharma_query.py`.
 
 ### Consideraciones de seguridad y cumplimiento
 - No sustituye el prospecto oficial ni el criterio de un profesional sanitario; toda
   respuesta debe incluir el aviso correspondiente (gestionado en la capa de presentación,
   `src/infrastructure/api/routers`).
-- La base vectorial se actualiza mediante un proceso ETL versionado y auditable; el agente
-  nunca escribe en el índice, solo lo consulta (principio de menor privilegio).
+- Las llamadas en vivo quedan restringidas exclusivamente al dominio oficial
+  `cima.aemps.es` — la URL base del cliente HTTP no es parametrizable desde la entrada de la
+  tool (ver SKILLS.md).
+- La caché vectorial se alimenta únicamente de respuestas ya validadas de CIMA en vivo
+  (nunca de generación del propio LLM); el agente solo la consulta, no escribe en ella
+  directamente (principio de menor privilegio).
 
 ---
 
