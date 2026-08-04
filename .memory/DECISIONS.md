@@ -3,6 +3,65 @@
 Registro de decisiones clave de arquitectura tomadas durante el desarrollo, complementario a
 los ADR formales en [docs/adr/](../docs/adr/).
 
+## [BLOQUE B] Observabilidad (Sentry) + `PrescriptionAgent` (Gemini multimodal) + `SafetyCheckAgent`
+
+**Decisión**: se implementaron los tres desarrollos pendientes señalados en el handoff de
+arquitectura:
+
+1. **Sentry**: `sentry_sdk.init(dsn=settings.sentry_dsn, ...)` en
+   [main.py](../src/infrastructure/api/main.py), condicionado a que `SENTRY_DSN` esté
+   presente (no se inicializa en vacío, evitando overhead/errores en desarrollo local sin
+   DSN configurado). Integraciones explícitas `StarletteIntegration` + `FastApiIntegration`.
+2. **`GeminiClient`** ([gemini_client.py](../src/infrastructure/external/gemini_client.py)):
+   usa `google-genai` (`genai.Client(api_key=settings.google_api_key)`,
+   `client.aio.models.generate_content` async) con `gemini-1.5-pro` y
+   `response_mime_type="application/json"` forzado, para extraer de una imagen de receta
+   `{"drugs": [{"farmaco", "dosificacion", "frecuencia", "duracion"}], "advertencias": []}`.
+   Sigue el mismo patrón defensivo que `CimaAPIClient`/`OllamaClient`: nunca propaga
+   excepciones (`APIError`, `JSONDecodeError`, `ValueError` capturadas), degrada a
+   `{"drugs": [], "advertencias": []}`. Confirma la decisión previa
+   ([[embeddings-locales-ollama]] más abajo): esta es la única ruta de código que consume
+   `google_api_key`.
+3. **`PrescriptionAgent`** ([prescription_agent.py](../src/application/agents/prescription_agent.py)):
+   orquestador delgado sobre un nuevo puerto de dominio `PrescriptionVisionPort`
+   ([drug_ports.py](../src/domain/ports/drug_ports.py)) — mismo patrón DIP del Bloque A;
+   `GeminiClient` lo satisface estructuralmente sin heredar de él (verificado con
+   `isinstance()`).
+4. **`SafetyCheckAgent`** ([safety_agent.py](../src/application/agents/safety_agent.py)):
+   recibe una lista de nombres de fármacos y evalúa interacciones contra una base curada en
+   memoria (`_KNOWN_INTERACTIONS`, 6 pares clínicamente documentados: p. ej.
+   warfarina+aspirina, fluoxetina+tramadol) usando la entidad de dominio existente
+   `DrugInteraction` ([drug_interaction.py](../src/domain/models/drug_interaction.py)).
+   Veredicto (`apto` / `apto_con_precaucion` / `requiere_revision_medica`) siguiendo la regla
+   de negocio de [SKILLS.md](../SKILLS.md#2-check_drug_interactions): cualquier interacción
+   `HIGH`/`SEVERE` fuerza `requiere_revision_medica`, nunca `apto` silencioso.
+
+**Limitación aceptada**: `SafetyCheckAgent._KNOWN_INTERACTIONS` es una base curada mínima
+(6 pares) con fines demostrativos de TFM, no una base de datos de interacciones clínica
+completa — no hay endpoint de interacciones en CIMA/AEMPS que sustituirla directamente.
+Ampliarla o sustituirla por una fuente curada real queda fuera de alcance de este bloque.
+
+**Nueva dependencia**: `python-multipart` (requerida por FastAPI para `UploadFile`/`File(...)`
+en `POST /analyze-prescription`), añadida a `requirements.txt` e instalada.
+
+**Endpoints nuevos** en
+[pharmacy_router.py](../src/infrastructure/api/routers/pharmacy_router.py):
+`POST /api/v1/pharmacy/analyze-prescription` (`UploadFile` → `PrescriptionAnalysisResponse`)
+y `POST /api/v1/pharmacy/check-interactions` (`InteractionCheckRequest` →
+`InteractionCheckResponse`), cableados con la misma cadena de dependencias `Depends()` que
+`/search`/`/consult`.
+
+**Verificación**: `ruff check .` limpio. `isinstance()` confirma que `GeminiClient` satisface
+`PrescriptionVisionPort`. `TestClient` end-to-end: `/health` (200), `/check-interactions` con
+warfarina+aspirina → `SEVERE` + `requiere_revision_medica` (200), sin coincidencias → `apto`
+(200), `/analyze-prescription` probado dos veces contra la API real de Gemini 1.5 Pro (con
+`GOOGLE_API_KEY` real): bytes inválidos → degrada a `{"drugs": [], "advertencias": []}` sin
+excepción (verifica el manejo de errores); un JPEG válido pero sin contenido de receta →
+Gemini responde 200 con `drugs: []` en vez de alucinar un fármaco inexistente, confirmando
+que la instrucción "nunca inventes datos" del prompt de sistema se respeta en la práctica.
+
+---
+
 ## Embeddings exclusivamente locales (Ollama) — `GOOGLE_API_KEY` reservada al `PrescriptionAgent`
 
 **Decisión**: los embeddings semánticos (`DrugService`, `RAGPharmAgent`, búsqueda vectorial

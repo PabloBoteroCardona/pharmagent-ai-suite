@@ -107,8 +107,30 @@ completo en [DECISIONS.md](DECISIONS.md).
 - Pendiente explícito (fuera de alcance de este bloque): `DrugRepositoryPort` sigue
   acoplado a `DrugModel` (tipo ORM) — requeriría una entidad de dominio `Drug` pura.
 
+## [BLOQUE B] Observabilidad + `PrescriptionAgent` + `SafetyCheckAgent` — ✅ completado
+
+Detalle completo y verificación en [DECISIONS.md](DECISIONS.md).
+
+- **Sentry**: `sentry_sdk.init()` en [main.py](../src/infrastructure/api/main.py), condicionado
+  a `settings.sentry_dsn`.
+- **`GeminiClient`** ([gemini_client.py](../src/infrastructure/external/gemini_client.py)):
+  `google-genai` + `gemini-1.5-pro` multimodal, `analyze_prescription_image(image_bytes)` →
+  JSON estructurado (`drugs`, `advertencias`). Único consumidor de `GOOGLE_API_KEY`.
+- **`PrescriptionAgent`** ([prescription_agent.py](../src/application/agents/prescription_agent.py)):
+  orquesta `GeminiClient` vía el nuevo puerto `PrescriptionVisionPort`.
+- **`SafetyCheckAgent`** ([safety_agent.py](../src/application/agents/safety_agent.py)):
+  verifica interacciones sobre una base curada (6 pares) usando la entidad de dominio
+  `DrugInteraction`; veredicto `apto`/`apto_con_precaucion`/`requiere_revision_medica`.
+- **Endpoints nuevos**: `POST /api/v1/pharmacy/analyze-prescription` (`UploadFile`) y
+  `POST /api/v1/pharmacy/check-interactions`.
+- Verificado sin regresiones: `ruff` limpio; `TestClient` end-to-end incluyendo dos llamadas
+  reales a la API de Gemini 1.5 Pro (bytes inválidos → degradación correcta; JPEG válido sin
+  contenido → `drugs: []`, sin alucinación).
+- Pendiente explícito: `SafetyCheckAgent` usa una base de interacciones curada mínima, no una
+  fuente clínica completa.
+
 ## Fases futuras
 
-Sin detallar todavía — pendientes de definición (implementación del resto de agentes ADK —
-`PrescriptionAgent`, `SafetyCheckAgent` —, tests automatizados, despliegue, entidad de
-dominio `Drug` desacoplada del ORM).
+Sin detallar todavía — pendientes de definición (tests automatizados, despliegue, entidad de
+dominio `Drug` desacoplada del ORM, ampliación de la base de interacciones de
+`SafetyCheckAgent`, orquestación de los 3 agentes vía Google ADK real).

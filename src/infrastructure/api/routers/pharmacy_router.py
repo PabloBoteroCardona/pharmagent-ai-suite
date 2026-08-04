@@ -4,18 +4,22 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.application.agents import RAGPharmAgent
+from src.application.agents import PrescriptionAgent, RAGPharmAgent, SafetyCheckAgent
 from src.application.services import DrugService
 from src.infrastructure.api.schemas.drug_schemas import (
     ConsultationRequest,
     ConsultationResponse,
     DrugSearchQuery,
+    InteractionCheckRequest,
+    InteractionCheckResponse,
+    PrescriptionAnalysisResponse,
 )
 from src.infrastructure.database import get_db_session
 from src.infrastructure.external.cima_client import CimaAPIClient
+from src.infrastructure.external.gemini_client import GeminiClient
 from src.infrastructure.external.ollama_client import OllamaClient
 from src.infrastructure.repositories import DrugRepository
 from src.use_cases.consult_drug_rag import ConsultDrugRAGUseCase
@@ -62,6 +66,20 @@ def get_consult_drug_rag_use_case(
     return ConsultDrugRAGUseCase(rag_agent=agent)
 
 
+def get_gemini_client() -> GeminiClient:
+    return GeminiClient()
+
+
+def get_prescription_agent(
+    gemini_client: GeminiClient = Depends(get_gemini_client),  # noqa: B008
+) -> PrescriptionAgent:
+    return PrescriptionAgent(vision_client=gemini_client)
+
+
+def get_safety_check_agent() -> SafetyCheckAgent:
+    return SafetyCheckAgent()
+
+
 @router.post("/search")
 async def search_drugs(
     payload: DrugSearchQuery,
@@ -86,3 +104,24 @@ async def consult(
 ) -> ConsultationResponse:
     result = await use_case.execute(payload.query)
     return ConsultationResponse(**result)
+
+
+@router.post("/analyze-prescription", response_model=PrescriptionAnalysisResponse)
+async def analyze_prescription(
+    file: UploadFile = File(...),  # noqa: B008
+    agent: PrescriptionAgent = Depends(get_prescription_agent),  # noqa: B008
+) -> PrescriptionAnalysisResponse:
+    image_bytes = await file.read()
+    result = await agent.extract_prescription(
+        image_bytes, mime_type=file.content_type or "image/jpeg"
+    )
+    return PrescriptionAnalysisResponse(**result)
+
+
+@router.post("/check-interactions", response_model=InteractionCheckResponse)
+async def check_interactions(
+    payload: InteractionCheckRequest,
+    agent: SafetyCheckAgent = Depends(get_safety_check_agent),  # noqa: B008
+) -> InteractionCheckResponse:
+    result = agent.check_interactions(payload.drugs)
+    return InteractionCheckResponse(**result)

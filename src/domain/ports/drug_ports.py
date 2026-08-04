@@ -53,3 +53,12 @@ class DrugRepositoryPort(Protocol):
     async def search_similar_by_vector(
         self, embedding: list[float], limit: int = 5
     ) -> list[DrugModel]: ...
+
+
+@runtime_checkable
+class PrescriptionVisionPort(Protocol):
+    """Comprensión multimodal de imágenes de recetas médicas (visión + lenguaje)."""
+
+    async def analyze_prescription_image(
+        self, image_bytes: bytes, mime_type: str = "image/jpeg"
+    ) -> dict: ...

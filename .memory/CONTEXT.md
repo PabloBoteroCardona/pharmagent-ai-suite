@@ -12,10 +12,42 @@ y [SKILLS.md](../SKILLS.md) para el detalle de agentes y herramientas.
 
 ## Estado actual
 
-**[BLOQUE A] de refactorización de arquitectura — completado.** Continúa Fase 6 (Ingesta de
-Datos y Pruebas) en paralelo.
+**[BLOQUE B] Observabilidad + `PrescriptionAgent` + `SafetyCheckAgent` — completado.**
+Continúa Fase 6 (Ingesta de Datos y Pruebas) en paralelo.
 
 ## Último hito verificado
+
+**[BLOQUE B] — Sentry, `GeminiClient`/`PrescriptionAgent` (Gemini 1.5 Pro multimodal) y
+`SafetyCheckAgent`.** Ver [DECISIONS.md](DECISIONS.md) para el detalle completo. Resumen:
+
+- **Sentry**: `sentry_sdk.init(dsn=settings.sentry_dsn, ...)` en
+  [main.py](../src/infrastructure/api/main.py), solo si `SENTRY_DSN` está presente
+  (`StarletteIntegration` + `FastApiIntegration`).
+- **`GeminiClient`** ([gemini_client.py](../src/infrastructure/external/gemini_client.py)):
+  `google-genai`, `gemini-1.5-pro`, `analyze_prescription_image(image_bytes, mime_type)` →
+  `{"drugs": [...], "advertencias": [...]}` con `response_mime_type="application/json"`.
+  Mismo patrón defensivo que `CimaAPIClient`/`OllamaClient` (nunca propaga excepciones).
+  Único consumidor de `GOOGLE_API_KEY` — confirma la frontera ya documentada.
+- **Nuevo puerto de dominio** `PrescriptionVisionPort`
+  ([drug_ports.py](../src/domain/ports/drug_ports.py)) — `GeminiClient` lo satisface
+  estructuralmente (verificado con `isinstance()`).
+- **`PrescriptionAgent`** ([prescription_agent.py](../src/application/agents/prescription_agent.py)):
+  orquestador delgado sobre `PrescriptionVisionPort`.
+- **`SafetyCheckAgent`** ([safety_agent.py](../src/application/agents/safety_agent.py)):
+  base curada de 6 interacciones conocidas (`DrugInteraction` de dominio), veredicto
+  `apto`/`apto_con_precaucion`/`requiere_revision_medica` (`HIGH`/`SEVERE` fuerza revisión).
+- **Endpoints nuevos** en `pharmacy_router.py`: `POST /analyze-prescription` (`UploadFile`) y
+  `POST /check-interactions`.
+- **Nueva dependencia**: `python-multipart` (requerida por `UploadFile`/`File(...)`).
+- **Verificado sin regresiones**: `ruff check .` limpio; `TestClient` end-to-end —
+  `/check-interactions` con warfarina+aspirina → `SEVERE`/`requiere_revision_medica`, sin
+  coincidencias → `apto`; `/analyze-prescription` probado dos veces contra la API real de
+  Gemini 1.5 Pro (bytes inválidos → degradación limpia; JPEG válido sin contenido → `drugs: []`
+  sin alucinación).
+- Pendiente explícito: base de interacciones de `SafetyCheckAgent` es mínima/demostrativa, no
+  una fuente clínica completa.
+
+---
 
 **[BLOQUE A] — Configuración centralizada + puertos de dominio.** Ver
 [DECISIONS.md](DECISIONS.md) para el detalle completo de la decisión. Resumen:
@@ -158,6 +190,9 @@ la escritura real en Postgres sigue bloqueada por el bug de `asyncpg`/Windows �
 
 ## Siguiente paso pendiente
 
-**PASO 27** — Pruebas End-to-End del Agente RAG. La prueba manual de humo ya se hizo (ver
-arriba: funciona con datos y modelos reales); queda formalizarla como suite de tests
-automatizados (p. ej. en `tests/integration/`) en vez de un script ad-hoc.
+**PASO 27** — Formalizar pruebas automatizadas. La verificación end-to-end de
+`RAGPharmAgent`, `PrescriptionAgent` y `SafetyCheckAgent` se ha hecho hasta ahora como
+pruebas de humo manuales (`TestClient` ad-hoc); queda convertirlas en una suite real en
+`tests/unit/`/`tests/integration/` (actualmente vacías). También pendiente: ampliar la base
+curada de interacciones de `SafetyCheckAgent` y desacoplar `DrugRepositoryPort` de `DrugModel`
+(ORM) con una entidad de dominio `Drug` pura.
