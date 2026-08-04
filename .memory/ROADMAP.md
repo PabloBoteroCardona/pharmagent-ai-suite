@@ -9,6 +9,7 @@
   `check_drug_interactions`, `search_cima_official_data`).
 - `.env.example` / `.env`.
 - `.pre-commit-config.yaml` (Ruff) instalado.
+- `CLAUDE.md` — Protocolo de Memoria (actualizar `.memory/CONTEXT.md` al cierre de cada paso).
 
 ## Fase 2 — Modelado de Dominio — ✅ 100%
 
@@ -20,22 +21,72 @@
   Python 3.11+, monolito modular con Clean Architecture, FastAPI, Google ADK,
   PostgreSQL + pgvector.
 
-## Fase 3 — Infraestructura Local — 🔄 en desarrollo
+## Fase 3 — Infraestructura Local — ✅ 100%
 
-- ✅ **Paso 16** — `docker-compose.yml`: servicios `postgres` (`pgvector/pgvector:pg16`, con
+- **Paso 15/16** — `docker-compose.yml`: servicios `postgres` (`pgvector/pgvector:pg16`, con
   healthcheck) y `ollama` (`ollama/ollama:latest`), con volúmenes persistentes
   `postgres_data` y `ollama_data`.
-- ✅ **Paso 17** — `src/infrastructure/database.py`: configuración de conexión asíncrona a
+- **Paso 17** — [database.py](../src/infrastructure/database.py): conexión asíncrona a
   PostgreSQL con SQLAlchemy 2.0 (`async_engine`, `async_sessionmaker`, `Base`,
   `get_db_session`).
-- ✅ (adicional, no numerado en el roadmap original) `CimaAPIClient`
-  ([src/infrastructure/external/cima_client.py](../src/infrastructure/external/cima_client.py))
-  — cliente asíncrono de la API oficial de CIMA/AEMPS, probado en tiempo real. Ver
-  [DECISIONS.md](DECISIONS.md) para la decisión de arquitectura asociada.
-- ⏳ **Paso 18/19 (pendiente)** — Modelo ORM `DrugModel` (SQLAlchemy, sobre `Base`) y script
-  `init_db.py` para habilitar la extensión `pgvector` en PostgreSQL y crear el esquema inicial.
+- **Paso 18** — [`CimaAPIClient`](../src/infrastructure/external/cima_client.py): cliente
+  asíncrono de la API oficial de CIMA/AEMPS (búsqueda, detalle por `nregistro`/`cn`,
+  prospecto). Probado en tiempo real — ver decisión asociada en [DECISIONS.md](DECISIONS.md).
+- **Paso 18/19** — [`DrugModel`](../src/infrastructure/models/drug_model.py) (SQLAlchemy 2.0
+  + `pgvector`) y [init_db.py](../src/infrastructure/init_db.py) (extensión `pgvector` +
+  esquema inicial).
+- **Paso 20** — [`DrugRepository`](../src/infrastructure/repositories/) (`save_drug`,
+  `get_by_nregistro`, `search_similar_by_vector` con `l2_distance`).
+- **Paso 21** — [`OllamaClient`](../src/infrastructure/external/ollama_client.py)
+  (`generate_embedding`, `generate_completion`), manejo defensivo de errores, timeout 60s.
+
+## Fase 4 — Casos de Uso y Agentes de IA — ✅ 100%
+
+- **Paso 22** — [`DrugService`](../src/application/services/drug_service.py):
+  `fetch_and_index_drug(nregistro)` (CIMA → embedding Ollama → caché Postgres) y
+  `search_drugs_semantic(query, limit)`.
+- **Paso 23** — [`RAGPharmAgent`](../src/application/agents/pharmacy_agent.py):
+  `answer_consultation(query)` — búsqueda semántica, contexto grounded, generación vía
+  Ollama, respuesta `{"query", "response", "sources"}`.
+
+## Fase 5 — API REST y Exposición de Servicios — ✅ 100%
+
+- **Paso 24** — Esquemas Pydantic
+  ([drug_schemas.py](../src/infrastructure/api/schemas/drug_schemas.py)) y endpoints
+  ([pharmacy_router.py](../src/infrastructure/api/routers/pharmacy_router.py)):
+  `POST /api/v1/pharmacy/search`, `POST /api/v1/pharmacy/consult`. App FastAPI
+  ([main.py](../src/infrastructure/api/main.py)) con `GET /health`. Cadena de dependencias
+  (`Depends`) validada end-to-end con `TestClient`.
+- **Paso 25** — Documentación y ejecución del servidor con Uvicorn: **no registrado como
+  ejecutado en esta conversación** — pendiente de confirmar/retomar si aún no se hizo.
+
+## Fase 6 — Ingesta de Datos y Pruebas — 🔄 en desarrollo
+
+- ✅ **Paso 26** — [scripts/ingest_drugs.py](../scripts/ingest_drugs.py): `ingest_top_drugs()`
+  busca en CIMA (`ibuprofeno`, `paracetamol`, `amoxicilina`, `omeprazol`) e indexa los 3
+  primeros resultados de cada término vía `DrugService.fetch_and_index_drug`, con manejo de
+  fallos por fármaco (un error puntual no aborta el lote). **12/12 fármacos indexados con
+  embedding real**, confirmado con `psql` directo sobre la tabla `drugs`.
+- 🔄 **Paso 27 (siguiente)** — Pruebas End-to-End del Agente RAG. Ya verificado manualmente
+  (`RAGPharmAgent.answer_consultation` funcionando contra CIMA + Postgres + Ollama reales,
+  sin stubs — ver [BUGS.md](BUGS.md)); falta formalizarlo como suite de tests automatizados.
+
+## Bugs de entorno — ambos ✅ RESUELTOS
+
+- `asyncpg` 0.31.0 era incompatible con Python 3.14 en Windows (aislado y confirmado: no era
+  un problema de Docker, Postgres ni del código de la app) y bloqueaba toda escritura/lectura
+  real contra Postgres. **Solucionado** combinando `WindowsSelectorEventLoopPolicy` +
+  Postgres publicado en el puerto `5433` (en vez de `5432`) + `connect_args={"ssl": False}`
+  en el engine.
+- El contenedor `pharmagent_ollama` no tenía ningún modelo descargado, por lo que
+  `generate_embedding`/`generate_completion` degradaban siempre a `[]`/`""`. **Solucionado**
+  descargando `nomic-embed-text` (embeddings, dim=768) y `llama3` (generación).
+
+Detalle completo y verificación de ambos en [BUGS.md](BUGS.md). **Ya no hay bloqueadores de
+entorno conocidos** — el pipeline completo (CIMA → Ollama → Postgres/pgvector →
+`RAGPharmAgent`) funciona de extremo a extremo con datos y modelos reales.
 
 ## Fases futuras
 
-Sin detallar todavía — pendientes de definición (implementación de agentes ADK, adaptador
-RAG sobre `pgvector`, endpoints FastAPI, tests).
+Sin detallar todavía — pendientes de definición (implementación del resto de agentes ADK —
+`PrescriptionAgent`, `SafetyCheckAgent` —, tests automatizados, despliegue).

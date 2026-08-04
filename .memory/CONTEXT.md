@@ -16,6 +16,31 @@ y [SKILLS.md](../SKILLS.md) para el detalle de agentes y herramientas.
 
 ## Último hito verificado
 
+**Pipeline 100% funcional de extremo a extremo con datos y modelos reales.** Se
+descargaron los modelos que faltaban en `pharmagent_ollama`:
+`docker exec pharmagent_ollama ollama pull nomic-embed-text` (274 MB, embeddings, dim=768,
+coincide con `DrugModel.embedding: Vector(768)`) y `ollama pull llama3` (4.7 GB, generación).
+Ver [BUGS.md](BUGS.md) para el detalle y una nota importante sobre arranque en frío.
+
+Con ambos modelos disponibles:
+- `python -m scripts.ingest_drugs` reejecutado → **12/12 fármacos indexados con embedding
+  real** (antes quedaban `NULL`), confirmado con `psql` directo.
+- `RAGPharmAgent.answer_consultation("¿qué dosis de ibuprofeno es adecuada?")` probado
+  contra CIMA + Postgres + Ollama reales (sin stubs): `search_drugs_semantic` recuperó
+  correctamente los 3 ibuprofenos más relevantes vía `l2_distance` de `pgvector`, y `llama3`
+  generó una respuesta grounded citando las dosis reales (200 mg y 600 mg) de los fármacos
+  recuperados. **38.7s** de latencia (CPU, sin GPU) — dentro del timeout de 60s de
+  `OllamaClient`, pero ajustado; ver nota de arranque en frío en [BUGS.md](BUGS.md).
+
+Con esto, el bug de `asyncpg` (resuelto antes) y la falta de modelos de Ollama (resuelta
+ahora) quedan ambos cerrados — ya no hay bloqueadores de entorno conocidos.
+
+**Bug de `asyncpg` en Windows/Python 3.14 RESUELTO.** Ver [BUGS.md](BUGS.md) para el
+detalle completo. Fix: `WindowsSelectorEventLoopPolicy` + Postgres publicado en el puerto
+`5433` (en vez de `5432`) + `connect_args={"ssl": False}` en el engine
+([database.py](../src/infrastructure/database.py) /
+[docker-compose.yml](../docker-compose.yml)).
+
 **PASO 26 — Script de ingesta masiva creado.**
 [scripts/ingest_drugs.py](../scripts/ingest_drugs.py): `ingest_top_drugs()` recorre
 `SEARCH_TERMS` (`ibuprofeno`, `paracetamol`, `amoxicilina`, `omeprazol`), busca cada término
@@ -98,4 +123,6 @@ la escritura real en Postgres sigue bloqueada por el bug de `asyncpg`/Windows �
 
 ## Siguiente paso pendiente
 
-**PASO 27** — Pruebas End-to-End del Agente RAG.
+**PASO 27** — Pruebas End-to-End del Agente RAG. La prueba manual de humo ya se hizo (ver
+arriba: funciona con datos y modelos reales); queda formalizarla como suite de tests
+automatizados (p. ej. en `tests/integration/`) en vez de un script ad-hoc.
