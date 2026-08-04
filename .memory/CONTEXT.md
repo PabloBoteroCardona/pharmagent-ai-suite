@@ -12,9 +12,26 @@ y [SKILLS.md](../SKILLS.md) para el detalle de agentes y herramientas.
 
 ## Estado actual
 
-**Fase 5 — API REST y Exposición de Servicios.**
+**Fase 6 — Ingesta de Datos y Pruebas.**
 
 ## Último hito verificado
+
+**PASO 26 — Script de ingesta masiva creado.**
+[scripts/ingest_drugs.py](../scripts/ingest_drugs.py): `ingest_top_drugs()` recorre
+`SEARCH_TERMS` (`ibuprofeno`, `paracetamol`, `amoxicilina`, `omeprazol`), busca cada término
+en CIMA (`CimaAPIClient.search_medicamentos`) y ejecuta
+`DrugService.fetch_and_index_drug(nregistro)` sobre los 3 primeros resultados de cada uno,
+imprimiendo progreso por fármaco (`[OK]`/`[FALLO]`/`[ERROR]`) y un resumen final
+`indexados/procesados`. Cada fármaco se procesa en su propio `try/except` para que un fallo
+puntual no aborte el resto del lote. Ejecutado con `python -m scripts.ingest_drugs` (no como
+script suelto: `scripts/` no es un paquete instalado, y `src` solo es importable si el
+proceso arranca desde la raíz del proyecto).
+
+Ejecutado en tiempo real: búsqueda en CIMA correcta para los 4 términos (138, 198, 145 y 168
+resultados respectivamente); los 12 intentos de indexación (`0/12`) fallan en el paso de
+escritura en Postgres por el bug de `asyncpg`/Windows/Python 3.14 ya documentado en
+[BUGS.md](BUGS.md) — el script demuestra ser resiliente a ese fallo (recorre los 12 fármacos
+y reporta el resumen final en vez de abortar en el primer error).
 
 **PASO 24 — Esquemas y endpoints REST con FastAPI creados.**
 - [src/infrastructure/api/schemas/drug_schemas.py](../src/infrastructure/api/schemas/drug_schemas.py):
@@ -81,4 +98,4 @@ la escritura real en Postgres sigue bloqueada por el bug de `asyncpg`/Windows �
 
 ## Siguiente paso pendiente
 
-**PASO 25** — Documentación y ejecución del servidor con Uvicorn.
+**PASO 27** — Pruebas End-to-End del Agente RAG.
