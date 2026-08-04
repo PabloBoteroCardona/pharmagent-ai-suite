@@ -18,6 +18,7 @@ from src.infrastructure.database import get_db_session
 from src.infrastructure.external.cima_client import CimaAPIClient
 from src.infrastructure.external.ollama_client import OllamaClient
 from src.infrastructure.repositories import DrugRepository
+from src.use_cases.consult_drug_rag import ConsultDrugRAGUseCase
 
 router = APIRouter(prefix="/api/v1/pharmacy", tags=["pharmacy"])
 
@@ -55,6 +56,12 @@ def get_rag_pharm_agent(
     return RAGPharmAgent(drug_service=drug_service, ollama_client=ollama_client)
 
 
+def get_consult_drug_rag_use_case(
+    agent: RAGPharmAgent = Depends(get_rag_pharm_agent),  # noqa: B008
+) -> ConsultDrugRAGUseCase:
+    return ConsultDrugRAGUseCase(rag_agent=agent)
+
+
 @router.post("/search")
 async def search_drugs(
     payload: DrugSearchQuery,
@@ -75,7 +82,7 @@ async def search_drugs(
 @router.post("/consult", response_model=ConsultationResponse)
 async def consult(
     payload: ConsultationRequest,
-    agent: RAGPharmAgent = Depends(get_rag_pharm_agent),  # noqa: B008
+    use_case: ConsultDrugRAGUseCase = Depends(get_consult_drug_rag_use_case),  # noqa: B008
 ) -> ConsultationResponse:
-    result = await agent.answer_consultation(payload.query)
+    result = await use_case.execute(payload.query)
     return ConsultationResponse(**result)

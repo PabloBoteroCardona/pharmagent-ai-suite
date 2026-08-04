@@ -8,7 +8,7 @@ comportamiento de este agente (fuente primaria CIMA + caché `pgvector`, respues
 from __future__ import annotations
 
 from src.application.services.drug_service import DrugService
-from src.infrastructure.external.ollama_client import OllamaClient
+from src.domain.ports import LanguageModelPort
 
 SYSTEM_PROMPT = (
     "Eres un asistente farmacéutico que responde consultas sobre medicamentos autorizados "
@@ -27,7 +27,9 @@ NO_CONTEXT_NOTE = "Contexto: no se encontró ningún medicamento relevante en la
 class RAGPharmAgent:
     """Agente RAG que responde consultas farmacéuticas basándose en la caché semántica de fármacos."""
 
-    def __init__(self, drug_service: DrugService, ollama_client: OllamaClient) -> None:
+    def __init__(
+        self, drug_service: DrugService, ollama_client: LanguageModelPort
+    ) -> None:
         self._drug_service = drug_service
         self._ollama_client = ollama_client
 

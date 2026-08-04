@@ -1,12 +1,12 @@
 """Cliente HTTP asíncrono para la API pública de CIMA (AEMPS).
 
-Encapsula el acceso de red a https://cima.aemps.es/cima/rest — usado por el
-adaptador RAG (`src/adapters/rag/`) para poblar el almacén vectorial con el
-texto oficial de fichas técnicas y prospectos. Nunca propaga excepciones de
-red: ante un fallo de conexión, timeout, respuesta de error o cuerpo vacío
-(CIMA devuelve 200 con cuerpo vacío para un nregistro/cn inexistente, en vez
-de un 404), devuelve una estructura vacía/`None` para que las capas
-superiores decidan cómo degradar.
+Encapsula el acceso de red a `settings.cima_base_url` — usado por `DrugService`
+(`src/application/services/`) para poblar la caché semántica local con el texto
+oficial de fichas técnicas y prospectos. Nunca propaga excepciones de red: ante
+un fallo de conexión, timeout, respuesta de error o cuerpo vacío (CIMA devuelve
+200 con cuerpo vacío para un nregistro/cn inexistente, en vez de un 404),
+devuelve una estructura vacía/`None` para que las capas superiores decidan
+cómo degradar.
 """
 
 from __future__ import annotations
@@ -16,7 +16,8 @@ from typing import Self
 
 import httpx
 
-CIMA_BASE_URL = "https://cima.aemps.es/cima/rest"
+from src.infrastructure.config.settings import settings
+
 DEFAULT_TIMEOUT_SECONDS = 10.0
 
 PROSPECTO_TIPO_DOC = 2
@@ -26,9 +27,11 @@ class CimaAPIClient:
     """Cliente de la API REST de CIMA/AEMPS."""
 
     def __init__(
-        self, base_url: str = CIMA_BASE_URL, timeout: float = DEFAULT_TIMEOUT_SECONDS
+        self, base_url: str | None = None, timeout: float = DEFAULT_TIMEOUT_SECONDS
     ) -> None:
-        self._client = httpx.AsyncClient(base_url=base_url, timeout=timeout)
+        self._client = httpx.AsyncClient(
+            base_url=base_url or settings.cima_base_url, timeout=timeout
+        )
 
     async def __aenter__(self) -> Self:
         return self

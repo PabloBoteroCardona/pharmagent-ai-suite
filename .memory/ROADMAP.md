@@ -86,7 +86,29 @@ Detalle completo y verificación de ambos en [BUGS.md](BUGS.md). **Ya no hay blo
 entorno conocidos** — el pipeline completo (CIMA → Ollama → Postgres/pgvector →
 `RAGPharmAgent`) funciona de extremo a extremo con datos y modelos reales.
 
+## [BLOQUE A] Refactorización y orden del proyecto — ✅ completado
+
+Ejecutado tras el análisis de arquitectura del handoff, en paralelo a la Fase 6. Detalle
+completo en [DECISIONS.md](DECISIONS.md).
+
+- **Configuración centralizada**: `pydantic-settings` +
+  [`Settings`](../src/infrastructure/config/settings.py) — sustituye los
+  `os.getenv`/`load_dotenv()` dispersos en `database.py`, `cima_client.py`,
+  `ollama_client.py`.
+- **Puertos de dominio**: [`src/domain/ports/drug_ports.py`](../src/domain/ports/drug_ports.py)
+  (`CimaDataSourcePort`, `LanguageModelPort`, `DrugRepositoryPort`) — `DrugService` y
+  `RAGPharmAgent` invierten su dependencia hacia estos puertos, no hacia las clases
+  concretas de infraestructura.
+- **Limpieza**: `src/adapters/{adk,db,rag}/` (vacío) eliminado.
+- **Caso de uso explícito**: [`ConsultDrugRAGUseCase`](../src/use_cases/consult_drug_rag.py),
+  conectado en `pharmacy_router.py` (`/consult` ya no llama a `RAGPharmAgent` directamente).
+- Verificado sin regresiones: `ruff`, ingesta real (12/12), y los 3 endpoints de la API
+  contra CIMA + Postgres + Ollama reales.
+- Pendiente explícito (fuera de alcance de este bloque): `DrugRepositoryPort` sigue
+  acoplado a `DrugModel` (tipo ORM) — requeriría una entidad de dominio `Drug` pura.
+
 ## Fases futuras
 
 Sin detallar todavía — pendientes de definición (implementación del resto de agentes ADK —
-`PrescriptionAgent`, `SafetyCheckAgent` —, tests automatizados, despliegue).
+`PrescriptionAgent`, `SafetyCheckAgent` —, tests automatizados, despliegue, entidad de
+dominio `Drug` desacoplada del ORM).

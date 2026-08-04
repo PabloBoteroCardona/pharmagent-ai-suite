@@ -7,20 +7,23 @@ PostgreSQL/pgvector (caché semántica), según la decisión de arquitectura en
 
 from __future__ import annotations
 
-from src.infrastructure.external.cima_client import CimaAPIClient
-from src.infrastructure.external.ollama_client import OllamaClient
+from src.domain.ports import CimaDataSourcePort, DrugRepositoryPort, LanguageModelPort
 from src.infrastructure.models import DrugModel
-from src.infrastructure.repositories import DrugRepository
 
 
 class DrugService:
-    """Orquesta la ingesta, indexación y búsqueda semántica de fármacos."""
+    """Orquesta la ingesta, indexación y búsqueda semántica de fármacos.
+
+    Depende únicamente de los puertos de dominio (`src/domain/ports/`), no de las
+    clases concretas de infraestructura — cualquier implementación que satisfaga
+    estos puertos estructuralmente (p. ej. un `CimaAPIClient` de test) sirve aquí.
+    """
 
     def __init__(
         self,
-        cima_client: CimaAPIClient,
-        ollama_client: OllamaClient,
-        drug_repo: DrugRepository,
+        cima_client: CimaDataSourcePort,
+        ollama_client: LanguageModelPort,
+        drug_repo: DrugRepositoryPort,
     ) -> None:
         self._cima_client = cima_client
         self._ollama_client = ollama_client

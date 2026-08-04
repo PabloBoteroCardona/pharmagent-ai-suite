@@ -2,32 +2,25 @@
 
 Expone el engine, la fábrica de sesiones y la dependencia `get_db_session`
 para inyectar en FastAPI / casos de uso. Los repositorios y modelos ORM
-concretos (capa `src/adapters/db/`) heredan de `Base` definida aquí.
+concretos (`src/infrastructure/repositories/`, `src/infrastructure/models/`)
+heredan de `Base` definida aquí.
 """
 
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 from collections.abc import AsyncGenerator
 
-from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
+
+from src.infrastructure.config.settings import settings
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-load_dotenv()
-
-DEFAULT_DATABASE_URL = (
-    "postgresql+asyncpg://pharmagent:pharmagent_pass@127.0.0.1:5433/pharmagent_db"
-)
-
-DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
-
-async_engine = create_async_engine(DATABASE_URL, connect_args={"ssl": False})
+async_engine = create_async_engine(settings.database_url, connect_args={"ssl": False})
 
 AsyncSessionFactory = async_sessionmaker(
     bind=async_engine,

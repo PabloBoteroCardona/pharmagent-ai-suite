@@ -12,9 +12,44 @@ y [SKILLS.md](../SKILLS.md) para el detalle de agentes y herramientas.
 
 ## Estado actual
 
-**Fase 6 — Ingesta de Datos y Pruebas.**
+**[BLOQUE A] de refactorización de arquitectura — completado.** Continúa Fase 6 (Ingesta de
+Datos y Pruebas) en paralelo.
 
 ## Último hito verificado
+
+**[BLOQUE A] — Configuración centralizada + puertos de dominio.** Ver
+[DECISIONS.md](DECISIONS.md) para el detalle completo de la decisión. Resumen:
+
+- `pydantic-settings` instalado; `Settings`
+  ([src/infrastructure/config/settings.py](../src/infrastructure/config/settings.py))
+  centraliza todas las variables de entorno. `database.py`, `cima_client.py` y
+  `ollama_client.py` refactorizados para usar la instancia global `settings` en vez de
+  `os.getenv`/`load_dotenv()` dispersos.
+- Puertos de dominio nuevos
+  ([src/domain/ports/drug_ports.py](../src/domain/ports/drug_ports.py)):
+  `CimaDataSourcePort`, `LanguageModelPort`, `DrugRepositoryPort` (`typing.Protocol`,
+  `@runtime_checkable`). `DrugService` y `RAGPharmAgent` dependen de estos puertos, no de
+  las clases concretas de infraestructura — Dependency Inversion Principle aplicado.
+  Verificado con `isinstance()`: `CimaAPIClient`, `OllamaClient` y `DrugRepository`
+  satisfacen sus puertos sin ningún cambio (tipado estructural).
+- `src/adapters/{adk,db,rag}/` eliminado (vacío, redundante con `src/infrastructure/`).
+- Caso de uso explícito creado y conectado:
+  [src/use_cases/consult_drug_rag.py](../src/use_cases/consult_drug_rag.py)
+  (`ConsultDrugRAGUseCase`) — el endpoint `POST /consult` ahora pasa por este caso de uso
+  en vez de llamar a `RAGPharmAgent` directamente.
+- **Verificado sin regresiones**: `ruff check .` limpio; `python -m scripts.ingest_drugs` →
+  12/12 fármacos indexados; los 3 endpoints (`/health`, `/search`, `/consult`) probados con
+  `TestClient` contra CIMA + Postgres + Ollama reales, con respuestas correctas.
+- `.env.example` actualizado: puerto de Postgres corregido a `5433`, añadidas
+  `CIMA_BASE_URL` y `EMBEDDING_PROVIDER` (esta última ya presente en `.env` real, apuntando
+  a `google` — sugiere que hay un cambio de proveedor de embeddings en marcha fuera de esta
+  conversación; `Settings.embedding_provider` la centraliza pero nada la consume todavía).
+
+**Pendiente explícito señalado en el propio análisis (no resuelto en este bloque)**:
+`DrugRepositoryPort` sigue referenciando `DrugModel` (tipo ORM de infraestructura) — ver
+limitación aceptada en [DECISIONS.md](DECISIONS.md).
+
+---
 
 **Pipeline 100% funcional de extremo a extremo con datos y modelos reales.** Se
 descargaron los modelos que faltaban en `pharmagent_ollama`:

@@ -1,24 +1,21 @@
 """Cliente HTTP asíncrono para un servidor Ollama local.
 
-Encapsula el acceso a la API de Ollama (`{OLLAMA_BASE_URL}/api/...`) usada por
-`SafetyCheckAgent` y `RAGPharmAgent` para generación local (Llama 3.1, Gemma 2)
-y embeddings. Nunca propaga excepciones de red: ante un fallo de conexión,
-timeout, respuesta de error o cuerpo malformado, degrada a una estructura
-vacía (`[]` / `""`) para que las capas superiores decidan cómo continuar.
+Encapsula el acceso a la API de Ollama (`{settings.ollama_base_url}/api/...`)
+usada por `SafetyCheckAgent` y `RAGPharmAgent` para generación local (Llama 3.1,
+Gemma 2) y embeddings. Nunca propaga excepciones de red: ante un fallo de
+conexión, timeout, respuesta de error o cuerpo malformado, degrada a una
+estructura vacía (`[]` / `""`) para que las capas superiores decidan cómo
+continuar.
 """
 
 from __future__ import annotations
 
 import json
-import os
 from typing import Self
 
 import httpx
-from dotenv import load_dotenv
 
-load_dotenv()
-
-DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
+from src.infrastructure.config.settings import settings
 
 # La generación local puede tardar bastante más que una simple consulta REST;
 # un timeout demasiado corto produciría fallos espurios en modelos grandes.
@@ -34,10 +31,9 @@ class OllamaClient:
     def __init__(
         self, base_url: str | None = None, timeout: float = DEFAULT_TIMEOUT_SECONDS
     ) -> None:
-        resolved_base_url = base_url or os.getenv(
-            "OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL
+        self._client = httpx.AsyncClient(
+            base_url=base_url or settings.ollama_base_url, timeout=timeout
         )
-        self._client = httpx.AsyncClient(base_url=resolved_base_url, timeout=timeout)
 
     async def __aenter__(self) -> Self:
         return self
