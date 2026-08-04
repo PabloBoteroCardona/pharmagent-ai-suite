@@ -46,10 +46,13 @@ class ExtractPrescriptionFromImageInput(BaseModel):
 
     model_config = ConfigDict(strict=True)
 
-    image_bytes: bytes = Field(..., description="Contenido binario de la imagen o PDF de la receta.")
+    image_bytes: bytes = Field(
+        ..., description="Contenido binario de la imagen o PDF de la receta."
+    )
     media_type: ImageMediaType
     patient_id: str | None = Field(
-        default=None, description="Identificador interno del paciente, si ya está registrado."
+        default=None,
+        description="Identificador interno del paciente, si ya está registrado.",
     )
 
     @field_validator("image_bytes")
@@ -65,12 +68,17 @@ class ExtractedDrugLine(BaseModel):
 
     model_config = ConfigDict(strict=True)
 
-    raw_text: str = Field(..., description="Texto tal como aparece en la receta, sin normalizar.")
+    raw_text: str = Field(
+        ..., description="Texto tal como aparece en la receta, sin normalizar."
+    )
     active_ingredient: str | None = Field(
-        default=None, description="Principio activo normalizado, si se identifica con confianza suficiente."
+        default=None,
+        description="Principio activo normalizado, si se identifica con confianza suficiente.",
     )
     dose: str | None = Field(default=None, description="Dosis, p. ej. '500 mg'.")
-    frequency: str | None = Field(default=None, description="Posología, p. ej. 'cada 8 horas'.")
+    frequency: str | None = Field(
+        default=None, description="Posología, p. ej. 'cada 8 horas'."
+    )
     duration_days: int | None = Field(default=None, ge=1)
     confidence_score: float = Field(..., ge=0.0, le=1.0)
 
@@ -87,7 +95,8 @@ class PrescriptionExtractionResult(BaseModel):
     drugs: list[ExtractedDrugLine] = Field(default_factory=list)
     overall_confidence: float = Field(..., ge=0.0, le=1.0)
     requires_manual_review: bool = Field(
-        ..., description="True si overall_confidence o algún campo crítico está por debajo del umbral configurado."
+        ...,
+        description="True si overall_confidence o algún campo crítico está por debajo del umbral configurado.",
     )
 ```
 
@@ -154,9 +163,17 @@ class DrugInteraction(BaseModel):
 
     involved_drugs: list[str] = Field(..., min_length=2)
     severity: Severity
-    mechanism: str = Field(..., description="Explicación farmacológica del mecanismo de interacción.")
-    recommendation: str = Field(..., description="Recomendación clínica concreta, p. ej. 'espaciar tomas 4 horas'.")
-    source: str = Field(..., description="Fuente de la interacción, p. ej. referencia AEMPS/CIMA o base curada.")
+    mechanism: str = Field(
+        ..., description="Explicación farmacológica del mecanismo de interacción."
+    )
+    recommendation: str = Field(
+        ...,
+        description="Recomendación clínica concreta, p. ej. 'espaciar tomas 4 horas'.",
+    )
+    source: str = Field(
+        ...,
+        description="Fuente de la interacción, p. ej. referencia AEMPS/CIMA o base curada.",
+    )
 
 
 class DrugInteractionReport(BaseModel):
@@ -167,7 +184,8 @@ class DrugInteractionReport(BaseModel):
     interactions: list[DrugInteraction] = Field(default_factory=list)
     verdict: Verdict
     verdict_justification: str = Field(
-        ..., description="Justificación textual del veredicto, citando las interacciones detectadas."
+        ...,
+        description="Justificación textual del veredicto, citando las interacciones detectadas.",
     )
 ```
 
@@ -227,16 +245,30 @@ class SearchCimaOfficialDataInput(BaseModel):
 
     model_config = ConfigDict(strict=True)
 
-    query: str = Field(..., min_length=3, description="Pregunta o término de búsqueda en lenguaje natural.")
+    query: str = Field(
+        ...,
+        min_length=3,
+        description="Pregunta o término de búsqueda en lenguaje natural.",
+    )
     drug_name: str | None = Field(
-        default=None, description="Nombre del medicamento para acotar la búsqueda, si se conoce."
+        default=None,
+        description="Nombre del medicamento para acotar la búsqueda, si se conoce.",
     )
     nregistro: str | None = Field(
-        default=None, description="Número de registro CIMA, si ya se conoce (evita una búsqueda previa por nombre)."
+        default=None,
+        description="Número de registro CIMA, si ya se conoce (evita una búsqueda previa por nombre).",
     )
-    top_k: int = Field(default=5, ge=1, le=20, description="Fragmentos máximos a devolver desde la caché vectorial.")
+    top_k: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        description="Fragmentos máximos a devolver desde la caché vectorial.",
+    )
     min_similarity: float = Field(
-        default=0.7, ge=0.0, le=1.0, description="Umbral mínimo de similitud coseno para un fragmento cacheado."
+        default=0.7,
+        ge=0.0,
+        le=1.0,
+        description="Umbral mínimo de similitud coseno para un fragmento cacheado.",
     )
 
 
@@ -246,20 +278,33 @@ class CimaFragment(BaseModel):
     model_config = ConfigDict(strict=True)
 
     drug_name: str
-    cima_code: str = Field(..., description="Número de registro / código CIMA del medicamento.")
-    section: str = Field(..., description="Sección de la ficha técnica o prospecto, p. ej. '4.3 Contraindicaciones'.")
+    cima_code: str = Field(
+        ..., description="Número de registro / código CIMA del medicamento."
+    )
+    section: str = Field(
+        ...,
+        description="Sección de la ficha técnica o prospecto, p. ej. '4.3 Contraindicaciones'.",
+    )
     text: str
     source: CimaDataSource
-    source_url: str = Field(..., description="URL del endpoint oficial de cima.aemps.es del que procede el fragmento.")
+    source_url: str = Field(
+        ...,
+        description="URL del endpoint oficial de cima.aemps.es del que procede el fragmento.",
+    )
     similarity: float | None = Field(
-        default=None, ge=0.0, le=1.0, description="Similitud coseno; solo se informa para fragmentos de VECTOR_CACHE."
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Similitud coseno; solo se informa para fragmentos de VECTOR_CACHE.",
     )
 
     @field_validator("source_url")
     @classmethod
     def restrict_to_aemps_domain(cls, v: str) -> str:
         if not v.startswith(CIMA_OFFICIAL_DOMAIN):
-            raise ValueError(f"source_url debe pertenecer al dominio oficial {CIMA_OFFICIAL_DOMAIN}")
+            raise ValueError(
+                f"source_url debe pertenecer al dominio oficial {CIMA_OFFICIAL_DOMAIN}"
+            )
         return v
 
 
@@ -270,7 +315,8 @@ class SearchCimaOfficialDataResult(BaseModel):
 
     fragments: list[CimaFragment] = Field(default_factory=list)
     primary_source_available: bool = Field(
-        ..., description="True si cima.aemps.es respondió con éxito; False si se recurrió a la caché vectorial."
+        ...,
+        description="True si cima.aemps.es respondió con éxito; False si se recurrió a la caché vectorial.",
     )
 
 
@@ -282,7 +328,8 @@ class RAGAnswer(BaseModel):
     answer: str
     sources: list[CimaFragment] = Field(default_factory=list)
     grounded: bool = Field(
-        ..., description="False si ni CIMA en vivo ni la caché vectorial aportaron fragmentos para fundamentar la respuesta."
+        ...,
+        description="False si ni CIMA en vivo ni la caché vectorial aportaron fragmentos para fundamentar la respuesta.",
     )
 ```
 

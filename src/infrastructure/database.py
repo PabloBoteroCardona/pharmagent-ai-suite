@@ -22,12 +22,12 @@ if sys.platform == "win32":
 load_dotenv()
 
 DEFAULT_DATABASE_URL = (
-    "postgresql+asyncpg://pharmagent:pharmagent_pass@localhost:5432/pharmagent_db"
+    "postgresql+asyncpg://pharmagent:pharmagent_pass@127.0.0.1:5433/pharmagent_db"
 )
 
 DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
 
-async_engine = create_async_engine(DATABASE_URL)
+async_engine = create_async_engine(DATABASE_URL, connect_args={"ssl": False})
 
 AsyncSessionFactory = async_sessionmaker(
     bind=async_engine,
