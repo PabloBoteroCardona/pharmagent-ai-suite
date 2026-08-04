@@ -39,6 +39,15 @@ class Settings(BaseSettings):
 
     sentry_dsn: str | None = None
 
+    # Si `api_key` es `None` (por defecto en desarrollo local/CI), la autenticación queda
+    # desactivada — ver `verify_api_key` en `src/infrastructure/api/security.py`. En
+    # despliegues reales debe fijarse `API_KEY` en el entorno.
+    api_key: str | None = None
+
+    # Lista de orígenes permitidos por CORS. `["*"]` (por defecto) es apropiado para
+    # desarrollo local; en producción debe restringirse a los orígenes reales del cliente.
+    cors_allowed_origins: list[str] = ["*"]
+
 
 @lru_cache
 def get_settings() -> Settings:

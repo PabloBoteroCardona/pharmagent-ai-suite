@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sentry_sdk
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.starlette import StarletteIntegration
 
@@ -19,6 +20,15 @@ if settings.sentry_dsn:
     )
 
 app = FastAPI(title="PharmAgent AI Suite API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(pharmacy_router)
 
 

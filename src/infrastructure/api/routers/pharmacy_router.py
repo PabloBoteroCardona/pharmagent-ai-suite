@@ -17,6 +17,7 @@ from src.infrastructure.api.schemas.drug_schemas import (
     InteractionCheckResponse,
     PrescriptionAnalysisResponse,
 )
+from src.infrastructure.api.security import verify_api_key
 from src.infrastructure.database import get_db_session
 from src.infrastructure.external.cima_client import CimaAPIClient
 from src.infrastructure.external.gemini_client import GeminiClient
@@ -24,7 +25,11 @@ from src.infrastructure.external.ollama_client import OllamaClient
 from src.infrastructure.repositories import DrugRepository
 from src.use_cases.consult_drug_rag import ConsultDrugRAGUseCase
 
-router = APIRouter(prefix="/api/v1/pharmacy", tags=["pharmacy"])
+router = APIRouter(
+    prefix="/api/v1/pharmacy",
+    tags=["pharmacy"],
+    dependencies=[Depends(verify_api_key)],
+)
 
 
 async def get_cima_client() -> AsyncGenerator[CimaAPIClient, None]:
