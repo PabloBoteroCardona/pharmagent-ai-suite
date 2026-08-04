@@ -14,7 +14,7 @@ if sys.stdout.encoding.lower() != "utf-8":
 
 async def main() -> None:
     async with CimaAPIClient() as client:
-        resultados = await client.search_medicamento("ibuprofeno")
+        resultados = await client.search_medicamentos("ibuprofeno")
 
         if not resultados:
             print("No se obtuvieron resultados.")

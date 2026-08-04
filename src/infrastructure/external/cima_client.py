@@ -3,12 +3,15 @@
 Encapsula el acceso de red a https://cima.aemps.es/cima/rest — usado por el
 adaptador RAG (`src/adapters/rag/`) para poblar el almacén vectorial con el
 texto oficial de fichas técnicas y prospectos. Nunca propaga excepciones de
-red: ante un fallo de conexión, timeout o respuesta de error, devuelve una
-estructura vacía/`None` para que las capas superiores decidan cómo degradar.
+red: ante un fallo de conexión, timeout, respuesta de error o cuerpo vacío
+(CIMA devuelve 200 con cuerpo vacío para un nregistro/cn inexistente, en vez
+de un 404), devuelve una estructura vacía/`None` para que las capas
+superiores decidan cómo degradar.
 """
 
 from __future__ import annotations
 
+import json
 from typing import Self
 
 import httpx
@@ -36,28 +39,36 @@ class CimaAPIClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
-    async def search_medicamento(self, nombre: str) -> list[dict]:
+    async def search_medicamentos(self, nombre: str) -> list[dict]:
         """Busca medicamentos por nombre. Devuelve lista vacía si no hay resultados o falla la red."""
         try:
             response = await self._client.get(
                 "/medicamentos", params={"nombre": nombre}
             )
             response.raise_for_status()
-        except httpx.HTTPError:
+            return response.json().get("resultados", [])
+        except (httpx.HTTPError, json.JSONDecodeError):
             return []
-        return response.json().get("resultados", [])
+
+    async def _get_medicamento(self, params: dict[str, str]) -> dict | None:
+        try:
+            response = await self._client.get("/medicamento", params=params)
+            response.raise_for_status()
+            return response.json() or None
+        except (httpx.HTTPError, json.JSONDecodeError):
+            return None
 
     async def get_medicamento_by_nregistro(self, nregistro: str) -> dict | None:
         """Obtiene la ficha completa de un medicamento por número de registro."""
-        try:
-            response = await self._client.get(
-                "/medicamento", params={"nregistro": nregistro}
-            )
-            response.raise_for_status()
-        except httpx.HTTPError:
-            return None
-        data = response.json()
-        return data or None
+        return await self._get_medicamento({"nregistro": nregistro})
+
+    async def get_medicamento_by_cn(self, cn: str) -> dict | None:
+        """Obtiene la ficha completa de un medicamento por código nacional (CN) del envase.
+
+        Permite ir directo a la ficha cuando ya se conoce el CN (p. ej. leído del
+        cupón-precinto), sin pasar por `search_medicamentos` ni recorrer resultados.
+        """
+        return await self._get_medicamento({"cn": cn})
 
     async def get_prospecto_html(self, nregistro: str) -> str | None:
         """Recupera y concatena el HTML de todas las secciones del prospecto oficial."""
@@ -67,10 +78,10 @@ class CimaAPIClient:
                 params={"nregistro": nregistro},
             )
             response.raise_for_status()
-        except httpx.HTTPError:
+            secciones = response.json().get("secciones", [])
+        except (httpx.HTTPError, json.JSONDecodeError):
             return None
 
-        secciones = response.json().get("secciones", [])
         html_fragments = [
             seccion["contenido"] for seccion in secciones if seccion.get("contenido")
         ]
