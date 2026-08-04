@@ -20,6 +20,14 @@ Convenciones:
 
 Usada por **PrescriptionAgent** ([AGENTS.md](AGENTS.md#1-prescriptionagent)).
 
+**Trigger**: invocar cuando la entrada del usuario sea una imagen (`mime-type: image/*`),
+un PDF, o una solicitud explícita de digitalización de un documento físico (p. ej. "sube
+una foto de tu receta", "escanea este documento").
+
+**Guardrail / Filtro**: no invocar si el usuario ya envía la pauta en texto plano
+estructurado (fármaco, dosis y posología ya legibles como texto) — en ese caso el flujo
+pasa directamente a `check_drug_interactions` sin pasar por extracción de imagen.
+
 ```python
 from datetime import date
 from enum import Enum
@@ -91,6 +99,14 @@ class PrescriptionExtractionResult(BaseModel):
 ## 2. `check_drug_interactions`
 
 Usada por **SafetyCheckAgent** ([AGENTS.md](AGENTS.md#2-safetycheckagent)).
+
+**Trigger**: invocar cuando se identifiquen 2 o más principios activos en la consulta del
+usuario, o inmediatamente tras una extracción de receta (`Prescription` /
+`PrescriptionExtractionResult`) que resulte en 2 o más fármacos.
+
+**Guardrail / Filtro**: no invocar si solo hay un medicamento involucrado — sin un segundo
+fármaco con el que interactuar, la herramienta no aporta información y debe omitirse (no
+existe interacción posible con un único principio activo).
 
 ```python
 from enum import Enum
@@ -164,6 +180,13 @@ o si `patient_context` es `None` y hay medicación crónica desconocida, el `ver
 ## 3. `search_cima_vector_db`
 
 Usada por **RAGPharmAgent** ([AGENTS.md](AGENTS.md#3-ragpharmagent)).
+
+**Trigger**: invocar cuando el usuario realice una pregunta específica sobre posología,
+contraindicaciones, excipientes o condiciones de conservación de un fármaco concreto.
+
+**Guardrail / Filtro**: no invocar ante saludos, consultas administrativas (p. ej. estado
+de un pedido, datos de contacto) o cuando el contexto de la conversación ya contiene la
+ficha técnica requerida para responder — evita recuperaciones redundantes.
 
 ```python
 from pydantic import BaseModel, ConfigDict, Field
