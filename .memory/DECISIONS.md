@@ -3,6 +3,179 @@
 Registro de decisiones clave de arquitectura tomadas durante el desarrollo, complementario a
 los ADR formales en [docs/adr/](../docs/adr/).
 
+## API REST abierta para consumo local (eliminación completa de la autenticación por API key)
+
+**Contexto**: tras la migración a Groq (ver siguiente sección más abajo), el usuario reportó
+`401: API key inválida o ausente` al usar el panel de Streamlit, atribuyéndolo a `API_KEY`
+vacía en `.env`. Al investigar, esa premisa era incorrecta: `API_KEY` estaba fijada a un
+valor real (`secreto123`) en el `.env` local — no se sabe con certeza cuándo ni por qué se
+fijó, posiblemente una prueba manual de autenticación en una sesión anterior no documentada
+en memoria. La corrección previa de `verify_api_key` (tratar `API_KEY=""` como "desactivada",
+ver sección de Groq más abajo) era correcta pero no aplicable a este caso: con una clave
+*no vacía* configurada, el comportamiento documentado (exigir `X-API-Key`) es el correcto —
+el problema real era que Streamlit no conocía esa clave (por diseño: es un cliente externo
+que no lee `.env` del backend, solo `PHARMAGENT_API_KEY`/la barra lateral).
+
+Se presentaron tres opciones al usuario (pegar la clave en Streamlit, vaciar `API_KEY` en
+`.env`, o no tocar nada) — respondió pidiendo algo más amplio: eliminar la autenticación por
+completo (la API es de consumo exclusivamente local para el frontend Streamlit, sin más
+clientes) y simplificar la UX de Streamlit quitando los controles de configuración de
+URL/API key visibles al usuario final.
+
+**Decisión — backend**: en vez de modificar `verify_api_key` para que fuera un no-op
+disfrazado (dejando código y configuración muertos), se eliminó el mecanismo completo:
+- `src/infrastructure/api/security.py` borrado (contenía `verify_api_key`,
+  `API_KEY_HEADER_NAME`).
+- `pharmacy_router.py` perdió el import y `dependencies=[Depends(verify_api_key)]` del
+  `APIRouter` — el router ya no depende de ninguna verificación por request.
+- `Settings.api_key` eliminado de `settings.py` — tras quitar su única lectura
+  (`verify_api_key`), el campo quedaba genuinamente sin ningún consumidor; mantenerlo
+  habría sido un campo de configuración que aparenta proteger algo sin hacerlo, un riesgo de
+  falsa sensación de seguridad peor que no tener el campo.
+- `.env.example` y el `.env` local (ya sin la línea `API_KEY=` al llegar a esta sesión — no
+  quedó claro si el propio usuario la quitó al editarlo en su IDE, dado que tenía el archivo
+  abierto) actualizados/consistentes con la ausencia del campo.
+
+**Decisión — frontend (Streamlit)**: `src/presentation/app.py` simplificado:
+- Eliminados `_headers()`, `API_KEY_HEADER_NAME`, `DEFAULT_API_KEY`, y el estado de sesión
+  `api_key`/`api_base_url` editables.
+- La URL base pasa a ser un módulo-constante `API_BASE_URL`, resuelta de
+  `PHARMAGENT_API_BASE_URL` (variable de entorno) con `http://localhost:8000` como valor por
+  defecto — configurable solo por quien despliegue el proceso, nunca visible ni editable
+  para el usuario final de la interfaz.
+- Sidebar reducido: se quitó la sección "⚙️ Conexión a la API" (los dos `text_input` de URL y
+  API key) por completo. Queda: título, estado de salud (`/health`, con botón "Comprobar
+  conexión"), lista de módulos, caption de fuente de datos.
+
+**Alcance de seguridad, explícito y no ocultado**: esta decisión deja la API REST sin ninguna
+protección — cualquier proceso con acceso de red al puerto puede invocar cualquier endpoint.
+Es una decisión deliberada y explícitamente solicitada por el usuario para el caso de uso
+real del proyecto (Streamlit y la API en la misma máquina, consumo local para evaluación del
+TFM), documentada como tal en el docstring de `pharmacy_router.py`, `.env.example`,
+`README.md` (sección "CORS", antes "Autenticación y CORS") y `AGENTS.md` — no apropiada para
+un despliegue expuesto a Internet sin reinstaurar algún mecanismo de autenticación.
+
+**Verificación**: 120 tests (`pytest`; -9 por eliminación de `test_security.py` completo [5
+casos] y `TestApiKeyAuthentication` [4 casos], +2 por `TestNoAuthenticationRequired` en
+`test_api_endpoints.py` — sin cabecera, y con una cabecera `X-API-Key` residual que debe
+ignorarse sin romper nada, cubriendo el caso de un cliente desactualizado que todavía la
+envíe), `ruff check .`/`ruff format --check .` limpios. Verificado además contra servicios
+reales, no solo `TestClient`: `uvicorn` real en el puerto 8123 → `POST
+/api/v1/pharmacy/check-interactions` sin ninguna cabecera → `200`, con una respuesta real del
+camino de razonamiento LLM de Groq (`source: "llm"`, no solo la base curada) — confirma que
+la ruta completa (sin auth, con Groq) funciona de extremo a extremo. `streamlit run
+--server.headless true` en el puerto 8766 → `200`, confirmando que el sidebar simplificado
+arranca sin errores.
+
+---
+
+## Migración de Ollama local a Groq para la generación de texto (RAG + SafetyCheckAgent)
+
+**Contexto**: el usuario pidió mejorar la latencia percibida de `RAGPharmAgent` y
+`SafetyCheckAgent`, señalando que la inferencia en Ollama local por CPU era lenta (~30s por
+respuesta, ver nota de arranque en frío en [BUGS.md](BUGS.md) y el hallazgo de
+[EVALUATION.md](EVALUATION.md) sobre un timeout de Ollama produciendo un "acierto" espurio).
+Pidió sustituirla por una API remota ultrarrápida y gratuita — Groq o Gemini 1.5 Flash —
+manteniendo el mismo puerto de dominio (`LanguageModelPort`) para no romper Clean
+Architecture.
+
+**Decisión**: se creó `GroqClient`
+([src/infrastructure/external/groq_client.py](../src/infrastructure/external/groq_client.py)),
+un cliente HTTP asíncrono sobre el endpoint de *chat completions* de Groq (compatible con el
+esquema de OpenAI), modelo `llama-3.1-8b-instant`. Se eligió Groq sobre Gemini Flash porque
+`google_api_key` ya está reservada exclusivamente a `GeminiClient`/`PrescriptionAgent` (ver
+decisión "Embeddings exclusivamente locales" más abajo) — reutilizarla para texto habría
+mezclado dos consumidores con contratos de privacidad distintos bajo la misma credencial.
+
+**Alcance deliberadamente limitado a generación de texto, no a embeddings**: `DrugService`
+sigue recibiendo `OllamaClient` sin cambios para `generate_embedding` — la política de
+privacidad ya documentada en `settings.py` ("los embeddings se generan siempre en local,
+nunca se envían a un proveedor externo") se mantiene intacta. Groq tampoco ofrece una API de
+embeddings, así que `GroqClient.generate_embedding` es un stub inerte (`return []`,
+documentado en el propio módulo) que nunca se invoca en la práctica — solo existe para
+satisfacer estructuralmente `LanguageModelPort`. El cableado en `pharmacy_router.py` separa
+ambos roles explícitamente: `get_drug_service` sigue dependiendo de `get_ollama_client`
+(embeddings); `get_rag_pharm_agent` y `get_safety_check_agent` pasaron a depender de un
+`get_groq_client` nuevo (generación).
+
+**Renombrado de `ollama_client` a `language_model`**: el parámetro del constructor de
+`RAGPharmAgent` se llamaba `ollama_client` (tipado `LanguageModelPort`, pero con un nombre
+que asumía la implementación concreta). Mantenerlo habría dejado un `self._ollama_client`
+apuntando en realidad a un `GroqClient`, confuso para cualquier lector. Se renombró a
+`language_model` (mismo nombre que ya usaba `SafetyCheckAgent`), actualizando el único sitio
+de producción que lo invocaba por *keyword* (`pharmacy_router.get_rag_pharm_agent`) y los 6
+usos en `tests/unit/test_pharmacy_agent.py`. `DrugService.__init__` conserva su parámetro
+`ollama_client` sin cambios — ahí sí sigue siendo, literalmente, un `OllamaClient`.
+
+**Compromiso de privacidad explícito, no oculto**: hasta esta migración, `AGENTS.md`/
+`README.md` afirmaban que `SafetyCheckAgent`/`RAGPharmAgent` se ejecutaban "100% local, sin
+dependencia de red externa" como garantía de privacidad de datos de salud (RGPD/LOPDGDD). Eso
+deja de ser cierto para el camino de razonamiento LLM: los nombres de fármacos evaluados (y,
+en el caso de `RAGPharmAgent`, la pregunta libre del usuario) ahora salen de la máquina hacia
+Groq. Se actualizaron ambos documentos para reflejarlo con honestidad en vez de dejar una
+afirmación de privacidad que ya no es cierta — no se envían datos identificativos del
+paciente (nombre, edad, historia clínica), solo nombres de fármacos y fragmentos de ficha
+técnica/prospecto, pero es una salida de datos que antes no existía. Es una decisión
+consciente del usuario, no un descuido: velocidad de respuesta percibida (~30s → <2s) a
+cambio de esa concesión de privacidad en un único camino (el de embeddings permanece 100%
+local sin excepción).
+
+**Bug real encontrado y corregido durante la verificación — `API_KEY=` vacío tratado como
+clave real**: al verificar la suite completa tras el cableado, 15 tests fallaron con `401
+Unauthorized` en endpoints que no deberían requerir autenticación. Causa: este entorno de
+desarrollo tiene un `.env` local (no versionado, `.gitignore` lo excluye) con una
+`GROQ_API_KEY`/`GOOGLE_API_KEY` reales para probar la migración, y `API_KEY=` explícitamente
+vacío junto a ellas. `pydantic-settings` parsea `API_KEY=` vacío como `settings.api_key = ""`
+(cadena vacía), no como `None` — pero `verify_api_key`
+([security.py](../src/infrastructure/api/security.py)) solo desactivaba la autenticación
+cuando `settings.api_key is None`, contradiciendo el contrato ya documentado en
+`.env.example` ("Vacío/ausente = autenticación desactivada"). Cualquier despliegue local con
+un `.env` que declarara `API_KEY=` vacío explícitamente (en vez de omitir la variable) quedaba
+con la API inaccesible sin previo aviso. Corregido a `if not settings.api_key: return` (trata
+`""` igual que `None`); test de regresión añadido
+(`test_allows_any_request_when_api_key_is_empty_string` en `test_security.py`). No relacionado
+con Groq — descubierto como efecto colateral de tener credenciales reales configuradas
+localmente por primera vez en este entorno.
+
+**Bug de diseño propio encontrado y corregido en el test de `GroqClient` sin API key**: el
+primer intento de `test_returns_empty_string_without_api_key_and_makes_no_request` construía
+`GroqClient(api_key=None)` esperando que eso forzara el camino sin credencial — pero
+`GroqClient.__init__` cae a `settings.groq_api_key` precisamente cuando `api_key is None`
+(mismo patrón que `CimaAPIClient`/`OllamaClient`/`GeminiClient`), así que con la
+`GROQ_API_KEY` real del `.env` local configurada, el test terminaba haciendo una petición HTTP
+real en vez de quedarse en el camino de degradación. Corregido forzando `client._api_key`
+directamente tras la construcción, replicando el mismo patrón ya usado en
+`test_gemini_client.py::test_returns_empty_result_when_no_api_key_configured` para el mismo
+problema estructural (constructor con *fallback* a `settings`, entorno de test con credencial
+real presente).
+
+**Verificación**: 127 tests (`pytest`, +12 nuevos: `test_groq_client.py` con 11 casos vía
+`httpx.MockTransport` — éxito, sin API key, error HTTP, error de conexión, timeout, JSON
+malformado, `choices` ausente/vacío, cabecera `Authorization`, mensaje `system` omitido si
+está vacío — y 1 caso de regresión en `test_security.py`), `ruff check .`/`ruff format
+--check .` limpios. Suite verificada tanto con el `.env` local real presente como con él
+temporalmente ausente (127/127 en ambos casos), confirmando que ya no depende de credenciales
+locales para pasar — la garantía de la suite ("no requiere Docker, red ni credenciales",
+documentada en README.md) queda restaurada tras el bug de `API_KEY` vacío.
+
+**Verificación adicional contra la API real de Groq** (no solo dobles de test — usando la
+`GROQ_API_KEY` real ya presente en el `.env` local de este entorno): `GroqClient` directo
+respondió en **0.27s** a una pregunta de dosis de ibuprofeno.
+`SafetyCheckAgent.check_interactions(["paracetamol", "omeprazol"])` — combinación fuera de la
+base curada, ejercitando el camino de razonamiento LLM con la salida JSON estructurada que
+exige `LLM_SYSTEM_PROMPT` — respondió en **0.37s**, parseada correctamente a
+`{"interactions": [...], "verdict": "apto_con_precaucion"}`. Ambas cifras muy por debajo del
+objetivo <2s y del ~30s de Ollama local en CPU, confirmando la mejora de latencia con
+servicios reales, no solo con dobles.
+
+**Documentación actualizada**: `AGENTS.md` (secciones 2 y 3 — modelo, modo de ejecución,
+consideraciones de privacidad), `README.md` (descripción, tabla de stack, árbol de
+`src/infrastructure/external/`, pasos de despliegue local — ya no hace falta descargar
+`llama3` en Ollama, solo `nomic-embed-text` — sección de tests), `.env.example`
+(`GROQ_BASE_URL`/`GROQ_API_KEY`/`GROQ_MODEL` documentados con la misma nota de privacidad).
+
+---
+
 ## CIMA en vivo como respaldo real de `/search` y `/consult` (no solo en la ingesta)
 
 **Contexto**: el usuario preguntó explícitamente si consultar interacciones o un medicamento

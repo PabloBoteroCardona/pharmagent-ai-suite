@@ -37,12 +37,17 @@ class Settings(BaseSettings):
     embedding_provider: str = "ollama"
     google_api_key: str | None = None
 
-    sentry_dsn: str | None = None
+    # Generación de texto (no embeddings) de RAGPharmAgent y SafetyCheckAgent: Groq (LPU,
+    # <2s de latencia) en vez de Ollama local por CPU (~30s, ver BUGS.md/DECISIONS.md).
+    # Los embeddings NO se mueven a Groq — siguen exclusivamente en Ollama local, sin
+    # excepción (Groq no ofrece API de embeddings y la política de privacidad de datos de
+    # salud de arriba sigue vigente para ese camino). Si `groq_api_key` no está configurada,
+    # `GroqClient.generate_completion` degrada a `""` en vez de fallar.
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    groq_api_key: str | None = None
+    groq_model: str = "llama-3.1-8b-instant"
 
-    # Si `api_key` es `None` (por defecto en desarrollo local/CI), la autenticación queda
-    # desactivada — ver `verify_api_key` en `src/infrastructure/api/security.py`. En
-    # despliegues reales debe fijarse `API_KEY` en el entorno.
-    api_key: str | None = None
+    sentry_dsn: str | None = None
 
     # Lista de orígenes permitidos por CORS. `["*"]` (por defecto) es apropiado para
     # desarrollo local; en producción debe restringirse a los orígenes reales del cliente.

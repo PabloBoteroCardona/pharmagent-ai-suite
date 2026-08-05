@@ -1,4 +1,10 @@
-"""Endpoints REST de farmacia: búsqueda semántica y consulta al `RAGPharmAgent`."""
+"""Endpoints REST de farmacia: búsqueda semántica y consulta al `RAGPharmAgent`.
+
+Sin autenticación: la API se sirve abierta para consumo del frontend local (Streamlit) —
+ver [.memory/DECISIONS.md](../../../.memory/DECISIONS.md), "API REST abierta para consumo
+local". Apropiado solo para desarrollo/demo local; un despliegue expuesto a Internet
+necesitaría reinstaurar algún mecanismo de autenticación.
+"""
 
 from __future__ import annotations
 
@@ -20,10 +26,10 @@ from src.infrastructure.api.schemas.drug_schemas import (
     PrescriptionAnalysisResponse,
     ProcessPrescriptionResponse,
 )
-from src.infrastructure.api.security import verify_api_key
 from src.infrastructure.database import get_db_session
 from src.infrastructure.external.cima_client import CimaAPIClient
 from src.infrastructure.external.gemini_client import GeminiClient
+from src.infrastructure.external.groq_client import GroqClient
 from src.infrastructure.external.ollama_client import OllamaClient
 from src.infrastructure.repositories import DrugRepository, PrescriptionRecordRepository
 from src.use_cases.consult_drug_rag import ConsultDrugRAGUseCase
@@ -32,7 +38,6 @@ from src.use_cases.process_prescription import ProcessPrescriptionUseCase
 router = APIRouter(
     prefix="/api/v1/pharmacy",
     tags=["pharmacy"],
-    dependencies=[Depends(verify_api_key)],
 )
 
 
@@ -43,6 +48,11 @@ async def get_cima_client() -> AsyncGenerator[CimaAPIClient, None]:
 
 async def get_ollama_client() -> AsyncGenerator[OllamaClient, None]:
     async with OllamaClient() as client:
+        yield client
+
+
+async def get_groq_client() -> AsyncGenerator[GroqClient, None]:
+    async with GroqClient() as client:
         yield client
 
 
@@ -64,9 +74,9 @@ def get_drug_service(
 
 def get_rag_pharm_agent(
     drug_service: DrugService = Depends(get_drug_service),  # noqa: B008
-    ollama_client: OllamaClient = Depends(get_ollama_client),  # noqa: B008
+    groq_client: GroqClient = Depends(get_groq_client),  # noqa: B008
 ) -> RAGPharmAgent:
-    return RAGPharmAgent(drug_service=drug_service, ollama_client=ollama_client)
+    return RAGPharmAgent(drug_service=drug_service, language_model=groq_client)
 
 
 def get_consult_drug_rag_use_case(
@@ -86,9 +96,9 @@ def get_prescription_agent(
 
 
 def get_safety_check_agent(
-    ollama_client: OllamaClient = Depends(get_ollama_client),  # noqa: B008
+    groq_client: GroqClient = Depends(get_groq_client),  # noqa: B008
 ) -> SafetyCheckAgent:
-    return SafetyCheckAgent(language_model=ollama_client)
+    return SafetyCheckAgent(language_model=groq_client)
 
 
 def get_prescription_record_repository(

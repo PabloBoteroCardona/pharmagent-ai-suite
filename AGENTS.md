@@ -6,7 +6,7 @@ Especificación de los tres agentes de PharmAgent AI Suite.
 [.memory/DECISIONS.md](.memory/DECISIONS.md)): los agentes **no** se implementan sobre el
 Google Agent Development Kit (`LlmAgent`, tool-calling declarativo) — se implementan como
 clases Python asíncronas simples en `src/application/agents/`, orquestando directamente los
-clientes concretos (`GeminiClient`, `OllamaClient`) a través de puertos de dominio
+clientes concretos (`GeminiClient`, `OllamaClient`, `GroqClient`) a través de puertos de dominio
 (`src/domain/ports/`, `typing.Protocol`). La inversión de dependencias (DIP) se consigue así
 sin necesitar el framework ADK: `src/application/` depende únicamente de las interfaces de
 `src/domain/ports/`, nunca de las clases concretas de `src/infrastructure/`. `google-genai`
@@ -83,12 +83,12 @@ seguridad a partir de la lista de fármacos ya extraída.
 
 | Campo | Valor |
 |---|---|
-| **Modelo** | **Diseño híbrido** (añadido en [BLOQUE D]): base curada en memoria (determinista, autoritativa) + `llama3` local vía Ollama como razonamiento complementario para combinaciones no cubiertas por la base. Ya no es "ningún LLM" como en [BLOQUE C] — se acerca al diseño objetivo de esta sección (`llama-3.1` local), aunque sin el *fallback* a Gemini descrito originalmente (no implementado; ver limitación aceptada abajo) |
-| **Tipo de invocación** | Método Python asíncrono (`check_interactions`, `async def` desde BLOQUE D). Consulta la base curada primero (sin red); solo si no hay coincidencia y hay un `LanguageModelPort` inyectado, llama a `OllamaClient.generate_completion` con un prompt restrictivo |
+| **Modelo** | **Diseño híbrido** (añadido en [BLOQUE D]): base curada en memoria (determinista, autoritativa) + `llama-3.1-8b-instant` en la nube vía Groq como razonamiento complementario para combinaciones no cubiertas por la base. Hasta la migración a Groq (ver [.memory/DECISIONS.md](.memory/DECISIONS.md)) el modelo era `llama3` local vía Ollama — sustituido por latencia (~30s en CPU local frente a <2s en Groq) |
+| **Tipo de invocación** | Método Python asíncrono (`check_interactions`, `async def` desde BLOQUE D). Consulta la base curada primero (sin red); solo si no hay coincidencia y hay un `LanguageModelPort` inyectado, llama a `GroqClient.generate_completion` con un prompt restrictivo |
 | **Ubicación real** | [`src/application/agents/safety_agent.py`](src/application/agents/safety_agent.py) |
 | **Puerto de dominio** | `LanguageModelPort` (opcional, inyectado — `None` desactiva el razonamiento LLM y el agente degrada al comportamiento de BLOQUE C) — usa además directamente la entidad de dominio `DrugInteraction` ([drug_interaction.py](src/domain/models/drug_interaction.py)) |
 | **Endpoints REST** | `POST /api/v1/pharmacy/check-interactions` (standalone) y `POST /api/v1/pharmacy/process-prescription` (encadenado tras `PrescriptionAgent`, ver `ProcessPrescriptionUseCase` más abajo) en `pharmacy_router.py` |
-| **Modo de ejecución** | 100% local, sin dependencia de red externa (Ollama local) — cumple el objetivo de privacidad del diseño original |
+| **Modo de ejecución** | Base curada 100% local (sin red); razonamiento LLM complementario en la nube (Groq) desde la migración descrita en [.memory/DECISIONS.md](.memory/DECISIONS.md) — los nombres de fármaco evaluados salen de la máquina en ese camino, ya no es "100% local" como antes de la migración |
 
 ### Responsabilidades
 - Recibir una lista de nombres de fármacos (texto libre, p. ej. salida de `PrescriptionAgent`
@@ -99,9 +99,9 @@ seguridad a partir de la lista de fármacos ya extraída.
   devolverla tal cual (`source: "curated"`) — **nunca** se consulta al LLM en este caso,
   para no arriesgar que un modelo contradiga una interacción ya verificada.
 - **Paso 2 — razonamiento LLM (complementario)**: si ningún par de la base curada aplica y
-  hay un `LanguageModelPort` inyectado, consulta a `llama3` con un prompt que exige JSON
-  estructurado y un campo `uncertain: bool` explícito. Las interacciones que devuelva se
-  marcan `source: "llm"`.
+  hay un `LanguageModelPort` inyectado, consulta a `llama-3.1-8b-instant` (Groq) con un
+  prompt que exige JSON estructurado y un campo `uncertain: bool` explícito. Las
+  interacciones que devuelva se marcan `source: "llm"`.
 - Emitir una recomendación explícita: `apto`, `apto_con_precaucion` o `requiere_revision_medica`.
 - **Nunca** aprobar silenciosamente una combinación con interacción `HIGH`/`SEVERE` (de
   cualquier fuente) — el veredicto en ese caso es siempre `requiere_revision_medica`. Ante
@@ -119,8 +119,9 @@ real — documentado explícitamente para no sobre-representar la fiabilidad del
 una base de datos de interacciones clínica completa. El razonamiento LLM complementario no
 está *grounded* en ninguna base de datos verificada — es conocimiento paramétrico del
 modelo, con las mismas limitaciones de fiabilidad que cualquier LLM sin RAG. El *fallback* a
-Gemini remoto descrito en el diseño original no está implementado (Ollama es la única fuente
-de razonamiento; si no está disponible, el agente cae al comportamiento solo-curada).
+Gemini remoto descrito en el diseño original no está implementado (Groq es la única fuente
+de razonamiento desde la migración; si `GROQ_API_KEY` no está configurada o la API no está
+disponible, el agente cae al comportamiento solo-curada — ver [.memory/DECISIONS.md](.memory/DECISIONS.md)).
 
 ### Principio rector (equivalente al prompt de sistema del diseño original)
 > Prioridad absoluta: la seguridad del paciente sobre la conveniencia. Ante cualquier
@@ -146,8 +147,12 @@ de razonamiento; si no está disponible, el agente cae al comportamiento solo-cu
   [prescription_record_model.py](src/infrastructure/models/prescription_record_model.py)).
 
 ### Consideraciones de seguridad y cumplimiento
-- Al ejecutarse 100% en memoria/Ollama local, no hay salida de datos clínicos hacia terceros
-  (a diferencia de un *fallback* a Gemini, no implementado).
+- La base curada (camino prioritario) se evalúa 100% en memoria, sin red. El razonamiento
+  LLM complementario (Groq, desde la migración descrita en
+  [.memory/DECISIONS.md](.memory/DECISIONS.md)) sí envía los nombres de fármaco evaluados a
+  un tercero — una salida de datos que no existía cuando el razonamiento era Ollama local.
+  Es una decisión consciente de intercambiar esa privacidad estricta por latencia (~30s → <2s);
+  no se envían datos identificativos del paciente, solo nombres de fármacos.
 - **Implementado en BLOQUE D**: `ProcessPrescriptionUseCase` persiste el veredicto y las
   interacciones detectadas en la tabla `prescription_records` (registro auditable) cuando se
   usa el flujo `/process-prescription`. El endpoint standalone `/check-interactions` sigue
@@ -162,13 +167,13 @@ medicamentos (AEMPS/CIMA) mediante *Retrieval-Augmented Generation*.
 
 | Campo | Valor |
 |---|---|
-| **Modelo** | Ollama local: `llama3` para generación, `nomic-embed-text` (768 dim) para embeddings — **no** `gemma-2` como decía el diseño original (ver [.memory/DECISIONS.md](.memory/DECISIONS.md), "Embeddings exclusivamente locales") |
+| **Modelo** | Groq (`llama-3.1-8b-instant`) para generación desde la migración por latencia descrita en [.memory/DECISIONS.md](.memory/DECISIONS.md); Ollama local (`nomic-embed-text`, 768 dim) para embeddings, sin cambios — **no** `gemma-2` como decía el diseño original (ver [.memory/DECISIONS.md](.memory/DECISIONS.md), "Embeddings exclusivamente locales"). Antes de la migración, la generación también era Ollama local (`llama3`) |
 | **Tipo de invocación** | Método Python asíncrono (`answer_consultation`), sin capa ADK/tool-calling |
 | **Ubicación real** | [`src/application/agents/pharmacy_agent.py`](src/application/agents/pharmacy_agent.py) (`RAGPharmAgent`), orquestado por [`ConsultDrugRAGUseCase`](src/use_cases/consult_drug_rag.py) |
 | **Puerto de dominio** | `LanguageModelPort` (generación/embeddings) + `DrugService` (aplicación) sobre `CimaDataSourcePort`/`DrugRepositoryPort` ([drug_ports.py](src/domain/ports/drug_ports.py)) |
 | **Endpoint REST** | `POST /api/v1/pharmacy/consult` en `pharmacy_router.py` |
 | **Fuente de recuperación real** | **Caché vectorial local primero, CIMA en vivo como respaldo automático** (`DrugService.search_drugs_semantic`) — implementado como corrección posterior (ver [.memory/DECISIONS.md](.memory/DECISIONS.md), corrección de "consulta sobre un medicamento no encontraba nada si no estaba pre-cargado"). Si la caché no tiene un resultado suficientemente relevante, `DrugService` consulta `CimaAPIClient.search_medicamentos` en vivo, indexa automáticamente los primeros resultados (embedding + persistencia) y los devuelve — consultas futuras sobre el mismo fármaco son entonces instantáneas (cache hit). Se prioriza caché-primero sobre CIMA-primero (orden invertido respecto al diseño original de SKILLS.md) por rendimiento: evita un *round-trip* a CIMA en cada consulta de un fármaco ya conocido, sin sacrificar corrección. |
-| **Modo de ejecución** | Local en el caso más común (fármaco ya cacheado); remoto (CIMA) solo la primera vez que se pregunta por un fármaco nuevo — latencia medida ~0.1-1.3s para la búsqueda en vivo (ver verificación abajo), más la generación de Ollama. |
+| **Modo de ejecución** | Búsqueda: local en el caso más común (fármaco ya cacheado); remoto (CIMA) solo la primera vez que se pregunta por un fármaco nuevo — latencia medida ~0.1-1.3s para la búsqueda en vivo (ver verificación abajo). Generación: remoto (Groq) desde la migración, <2s frente a los ~30s de Ollama local en CPU (ver [.memory/DECISIONS.md](.memory/DECISIONS.md)). |
 
 ### Responsabilidades
 - Recibir la pregunta del usuario (profesional sanitario o paciente) sobre un medicamento,
@@ -178,7 +183,7 @@ medicamentos (AEMPS/CIMA) mediante *Retrieval-Augmented Generation*.
   filtrado por un umbral de relevancia — ver nota sobre la métrica más abajo); si no hay
   resultados relevantes, busca en vivo en CIMA por nombre y los indexa.
 - Generar una respuesta **basada exclusivamente en los fragmentos recuperados** (nombre,
-  principios activos, prospecto) vía el `system_prompt` grounded de `OllamaClient`.
+  principios activos, prospecto) vía el `system_prompt` grounded de `GroqClient`.
 - Si ni la caché ni CIMA en vivo devuelven nada relevante, el `system_prompt` indica
   explícitamente la ausencia de contexto — la salida además expone `source: "cache"|"live"|"none"`
   para que el consumidor sepa la procedencia (ver "Entradas/salidas" abajo); sigue sin haber
@@ -274,16 +279,16 @@ respuesta completa citando los 3 medicamentos de losartán encontrados.
   individual (latencia, modelo usado, éxito/fallback) como describía el diseño original —
   aunque sí existe una medición de latencia puntual (no continua) en
   [EVALUATION.md](EVALUATION.md).
-- **Configuración real**: nombres de modelo (`gemini-flash-latest`, `llama3`,
-  `nomic-embed-text`) y endpoints (`OLLAMA_BASE_URL`, `CIMA_BASE_URL`, `GOOGLE_API_KEY`) se
-  leen de `src/infrastructure/config/settings.py` (`pydantic-settings`, BLOQUE A) — ya
-  implementado, no pendiente. Desde BLOQUE D también centraliza `API_KEY`
-  (autenticación REST) y `CORS_ALLOWED_ORIGINS`.
+- **Configuración real**: nombres de modelo (`gemini-flash-latest`, `llama-3.1-8b-instant`
+  vía Groq, `nomic-embed-text`) y endpoints (`OLLAMA_BASE_URL`, `GROQ_BASE_URL`,
+  `CIMA_BASE_URL`, `GOOGLE_API_KEY`) se leen de `src/infrastructure/config/settings.py`
+  (`pydantic-settings`, BLOQUE A) — ya implementado, no pendiente. También centraliza
+  `CORS_ALLOWED_ORIGINS`.
 - **Persistencia y migraciones (BLOQUE D)**: el esquema de base de datos se gestiona con
   Alembic ([migrations/](migrations/)), no con `Base.metadata.create_all` — ver
   [README.md](README.md#migraciones-de-base-de-datos). `PrescriptionRecordModel` persiste el
   resultado de `ProcessPrescriptionUseCase` como registro auditable.
-- **Autenticación y CORS (BLOQUE D)**: los endpoints de `pharmacy_router.py` exigen la
-  cabecera `X-API-Key` si `settings.api_key` está configurada (`src/infrastructure/api/security.py`);
-  CORS se controla vía `settings.cors_allowed_origins`. Ambos desactivados por defecto en
-  desarrollo local/CI.
+- **CORS (BLOQUE D)**: `settings.cors_allowed_origins` (`["*"]` por defecto en desarrollo
+  local/CI). La API REST no exige autenticación — se sirve abierta para consumo del frontend
+  local (Streamlit); ver [.memory/DECISIONS.md](.memory/DECISIONS.md), "API REST abierta
+  para consumo local".

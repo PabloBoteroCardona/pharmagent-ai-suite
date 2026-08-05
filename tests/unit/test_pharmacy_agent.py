@@ -30,9 +30,9 @@ class TestAnswerConsultation:
         drug_service = _make_drug_service(
             DrugSearchResult(drugs=[FAKE_DRUG], source="cache")
         )
-        ollama_client = AsyncMock(spec=LanguageModelPort)
-        ollama_client.generate_completion.return_value = "respuesta"
-        agent = RAGPharmAgent(drug_service=drug_service, ollama_client=ollama_client)
+        language_model = AsyncMock(spec=LanguageModelPort)
+        language_model.generate_completion.return_value = "respuesta"
+        agent = RAGPharmAgent(drug_service=drug_service, language_model=language_model)
 
         await agent.answer_consultation("¿dosis de ibuprofeno?")
 
@@ -45,9 +45,9 @@ class TestAnswerConsultation:
         drug_service = _make_drug_service(
             DrugSearchResult(drugs=[FAKE_DRUG], source="live")
         )
-        ollama_client = AsyncMock(spec=LanguageModelPort)
-        ollama_client.generate_completion.return_value = "respuesta"
-        agent = RAGPharmAgent(drug_service=drug_service, ollama_client=ollama_client)
+        language_model = AsyncMock(spec=LanguageModelPort)
+        language_model.generate_completion.return_value = "respuesta"
+        agent = RAGPharmAgent(drug_service=drug_service, language_model=language_model)
 
         await agent.answer_consultation(
             "¿qué dosis es adecuada?", drug_name="ibuprofeno"
@@ -62,9 +62,9 @@ class TestAnswerConsultation:
         drug_service = _make_drug_service(
             DrugSearchResult(drugs=[FAKE_DRUG], source="live")
         )
-        ollama_client = AsyncMock(spec=LanguageModelPort)
-        ollama_client.generate_completion.return_value = "respuesta"
-        agent = RAGPharmAgent(drug_service=drug_service, ollama_client=ollama_client)
+        language_model = AsyncMock(spec=LanguageModelPort)
+        language_model.generate_completion.return_value = "respuesta"
+        agent = RAGPharmAgent(drug_service=drug_service, language_model=language_model)
 
         result = await agent.answer_consultation("consulta")
 
@@ -74,15 +74,15 @@ class TestAnswerConsultation:
     @pytest.mark.asyncio
     async def test_no_results_produces_none_source_and_no_context_note(self) -> None:
         drug_service = _make_drug_service(DrugSearchResult(drugs=[], source="none"))
-        ollama_client = AsyncMock(spec=LanguageModelPort)
-        ollama_client.generate_completion.return_value = "sin informacion verificada"
-        agent = RAGPharmAgent(drug_service=drug_service, ollama_client=ollama_client)
+        language_model = AsyncMock(spec=LanguageModelPort)
+        language_model.generate_completion.return_value = "sin informacion verificada"
+        agent = RAGPharmAgent(drug_service=drug_service, language_model=language_model)
 
         result = await agent.answer_consultation("consulta")
 
         assert result["source"] == "none"
         assert result["sources"] == []
-        system_prompt_used = ollama_client.generate_completion.call_args.kwargs[
+        system_prompt_used = language_model.generate_completion.call_args.kwargs[
             "system"
         ]
         assert "no se encontró ningún medicamento" in system_prompt_used
@@ -96,16 +96,16 @@ class TestAnswerConsultation:
         drug_service = _make_drug_service(
             DrugSearchResult(drugs=[FAKE_DRUG], source="live")
         )
-        ollama_client = AsyncMock(spec=LanguageModelPort)
-        ollama_client.generate_completion.return_value = "respuesta"
-        agent = RAGPharmAgent(drug_service=drug_service, ollama_client=ollama_client)
+        language_model = AsyncMock(spec=LanguageModelPort)
+        language_model.generate_completion.return_value = "respuesta"
+        agent = RAGPharmAgent(drug_service=drug_service, language_model=language_model)
 
         await agent.answer_consultation(
             "¿qué dosis es adecuada?", drug_name="ibuprofeno"
         )
 
-        ollama_client.generate_completion.assert_awaited_once()
+        language_model.generate_completion.assert_awaited_once()
         assert (
-            ollama_client.generate_completion.call_args.kwargs["prompt"]
+            language_model.generate_completion.call_args.kwargs["prompt"]
             == "¿qué dosis es adecuada?"
         )

@@ -12,7 +12,7 @@ de fichas técnicas oficiales de medicamentos autorizados en España (AEMPS/CIMA
 - [Instrucciones de despliegue en local](#instrucciones-de-despliegue-en-local)
 - [Despliegue con Docker Compose](#despliegue-con-docker-compose)
 - [Endpoints de la API](#endpoints-de-la-api)
-- [Autenticación y CORS](#autenticación-y-cors)
+- [CORS](#cors)
 - [Pruebas automatizadas y cobertura](#pruebas-automatizadas-y-cobertura)
 - [Evaluación cuantitativa](#evaluación-cuantitativa)
 - [Migraciones de base de datos](#migraciones-de-base-de-datos)
@@ -29,8 +29,9 @@ comprometer la seguridad del paciente ni la privacidad de los datos de salud que
 2. **Verificación de interacciones farmacológicas** entre los fármacos de una receta
    (`SafetyCheckAgent`): una base curada de interacciones documentadas actúa como fuente
    autoritativa, y para combinaciones no cubiertas por esa base se consulta opcionalmente a
-   un modelo de lenguaje local (Ollama/`llama3`) — con un veredicto explícito y nunca una
-   aprobación silenciosa ante una interacción grave o ante incertidumbre del modelo.
+   un modelo de lenguaje en la nube (Groq/`llama-3.1-8b-instant`) — con un veredicto
+   explícito y nunca una aprobación silenciosa ante una interacción grave o ante
+   incertidumbre del modelo.
 3. **Consulta en lenguaje natural** sobre fichas técnicas oficiales de medicamentos
    (`RAGPharmAgent`), con respuestas *grounded* — basadas únicamente en la información
    recuperada, nunca en conocimiento no verificado del modelo.
@@ -40,10 +41,15 @@ extremo: sube una imagen de receta → extrae los fármacos → si hay 2 o más,
 automáticamente sus interacciones — y persiste el resultado como registro auditable.
 
 Un principio de diseño transversal, motivado por tratarse de datos de salud (categoría
-especial según RGPD/LOPDGDD): **los embeddings y la generación de texto para RAG se ejecutan
-siempre en local vía Ollama**; la única llamada a un proveedor externo (Google Gemini) es la
-comprensión multimodal de imágenes de recetas, que no tiene alternativa local viable con
-calidad suficiente. Ver el detalle de esta y otras decisiones de arquitectura en
+especial según RGPD/LOPDGDD): **los embeddings se ejecutan siempre en local vía Ollama**, sin
+excepción. La generación de texto (razonamiento de `SafetyCheckAgent` y respuestas de
+`RAGPharmAgent`) se ejecuta en la nube vía Groq desde una migración posterior por latencia
+(~30s en CPU local frente a <2s en Groq) — una decisión consciente de intercambiar la
+privacidad estricta de "nunca sale de la máquina" por velocidad de respuesta percibida; solo
+salen nombres de fármacos y fragmentos de ficha técnica, nunca datos identificativos del
+paciente. La otra llamada a un proveedor externo (Google Gemini) es la comprensión
+multimodal de imágenes de recetas, que tampoco tiene alternativa local viable con calidad
+suficiente. Ver el detalle de esta y otras decisiones de arquitectura en
 [.memory/DECISIONS.md](.memory/DECISIONS.md).
 
 ## Stack tecnológico y arquitectura
@@ -53,10 +59,10 @@ calidad suficiente. Ver el detalle de esta y otras decisiones de arquitectura en
 | API web | FastAPI (async), Uvicorn |
 | Validación / esquemas | Pydantic v2 |
 | Persistencia | PostgreSQL 16 + `pgvector`, SQLAlchemy 2.0 async, `asyncpg`, Alembic (migraciones) |
-| LLM local | Ollama (`llama3` para generación, `nomic-embed-text` para embeddings) |
+| Embeddings locales | Ollama (`nomic-embed-text`) |
+| LLM de generación remoto | Groq (`llama-3.1-8b-instant`), para `SafetyCheckAgent`/`RAGPharmAgent` |
 | LLM multimodal remoto | Google Gemini (`google-genai`, modelo `gemini-flash-latest`), exclusivo para extracción de recetas |
 | Fuente de datos oficial | API REST de CIMA/AEMPS (`https://cima.aemps.es/cima/rest`) |
-| Autenticación | API key por cabecera (`X-API-Key`), opcional |
 | Observabilidad | Sentry (`sentry-sdk`, captura de errores a nivel de aplicación) |
 | Configuración | `pydantic-settings` (fuente única de variables de entorno) |
 | Contenedores | Docker, Docker Compose |
@@ -83,7 +89,7 @@ src/
 └── infrastructure/           # Framework web, clientes externos, persistencia, configuración
     ├── api/                     # FastAPI: routers, esquemas Pydantic REST, main.py, security.py
     ├── config/                   # pydantic-settings (única fuente de variables de entorno)
-    ├── external/                  # CimaAPIClient, OllamaClient, GeminiClient
+    ├── external/                  # CimaAPIClient, OllamaClient, GroqClient, GeminiClient
     ├── models/ · repositories/     # ORM SQLAlchemy + pgvector, repositorios
     └── database.py                # Motor async de PostgreSQL
 
@@ -136,12 +142,12 @@ desarrollo activo. Para un despliegue completo en contenedores, ver
    docker compose up -d postgres ollama
    ```
 
-3. **Descargar los modelos de Ollama** (una sola vez; persisten en el volumen
-   `ollama_data`):
+3. **Descargar el modelo de embeddings de Ollama** (una sola vez; persiste en el volumen
+   `ollama_data`). Ya no hace falta `llama3`: la generación de texto de `SafetyCheckAgent`/
+   `RAGPharmAgent` se sirve desde Groq en la nube, no desde Ollama (ver paso 4):
 
    ```bash
    docker exec pharmagent_ollama ollama pull nomic-embed-text
-   docker exec pharmagent_ollama ollama pull llama3
    ```
 
 4. **Configurar las variables de entorno**: copiar `.env.example` a `.env` y ajustar lo
@@ -152,10 +158,12 @@ desarrollo activo. Para un despliegue completo en contenedores, ver
    ```
 
    Añadir `GOOGLE_API_KEY` en `.env` solo si se va a probar `/analyze-prescription` o
-   `/process-prescription`. `EMBEDDING_PROVIDER` debe permanecer en `ollama` — ver
+   `/process-prescription`. Añadir `GROQ_API_KEY` (gratuita en [console.groq.com](https://console.groq.com/))
+   para que `SafetyCheckAgent` razone sobre combinaciones no cubiertas por la base curada y
+   `RAGPharmAgent`/`/consult` generen respuesta — sin ella, ambos degradan a una salida vacía
+   en vez de fallar (ver `GroqClient`). `EMBEDDING_PROVIDER` debe permanecer en `ollama` — ver
    [.memory/DECISIONS.md](.memory/DECISIONS.md) sobre por qué los embeddings nunca usan un
-   proveedor externo. Ver [Autenticación y CORS](#autenticación-y-cors) para `API_KEY` y
-   `CORS_ALLOWED_ORIGINS`.
+   proveedor externo. Ver [CORS](#cors) para `CORS_ALLOWED_ORIGINS`.
 
 5. **Aplicar las migraciones de base de datos** (crea el esquema, habilita `pgvector`):
 
@@ -202,16 +210,16 @@ docker exec pharmagent_api python -m scripts.ingest_drugs
 
 ## Endpoints de la API
 
-Prefijo común: `/api/v1/pharmacy` (excepto `/health`). Si `API_KEY` está configurada, todos
-los endpoints de este prefijo requieren la cabecera `X-API-Key` — ver
-[Autenticación y CORS](#autenticación-y-cors).
+Prefijo común: `/api/v1/pharmacy` (excepto `/health`). La API se sirve abierta, sin
+autenticación — ver [.memory/DECISIONS.md](.memory/DECISIONS.md), "API REST abierta para
+consumo local".
 
 | Método | Ruta | Descripción | Agente / servicio |
 |---|---|---|---|
-| `GET` | `/health` | Comprobación de disponibilidad del servicio (sin autenticación) | — |
+| `GET` | `/health` | Comprobación de disponibilidad del servicio | — |
 | `POST` | `/search` | Búsqueda de fármacos: caché vectorial primero, CIMA en vivo como respaldo automático | `DrugService` |
 | `POST` | `/consult` | Consulta en lenguaje natural, respuesta *grounded* (caché + CIMA en vivo como respaldo) | `RAGPharmAgent` |
-| `POST` | `/check-interactions` | Verificación de interacciones entre 2+ fármacos (base curada + LLM local) | `SafetyCheckAgent` |
+| `POST` | `/check-interactions` | Verificación de interacciones entre 2+ fármacos (base curada + LLM en la nube vía Groq) | `SafetyCheckAgent` |
 | `POST` | `/analyze-prescription` | Extracción estructurada desde imagen de receta | `PrescriptionAgent` |
 | `POST` | `/process-prescription` | Flujo completo: extracción + verificación automática de interacciones, con persistencia auditable | `ProcessPrescriptionUseCase` |
 
@@ -335,21 +343,19 @@ campo `file`):
 completo se persiste como registro auditable en la tabla `prescription_records` (ver
 [Migraciones de base de datos](#migraciones-de-base-de-datos)).
 
-## Autenticación y CORS
+## CORS
 
-- **API key** (`X-API-Key`): controlada por la variable `API_KEY` en `.env`. Si está
-  vacía/ausente (por defecto en desarrollo local y en CI), la autenticación queda
-  **desactivada** — apropiado para evaluación del TFM sin fricción. En un despliegue real,
-  fijar un valor y enviarlo en cada petición:
+La API no requiere ninguna autenticación — se sirve abierta para consumo del frontend local
+(Streamlit) y de la evaluación del TFM sin fricción (ver
+[.memory/DECISIONS.md](.memory/DECISIONS.md), "API REST abierta para consumo local"; solo
+apropiado para desarrollo/demo local, no para un despliegue expuesto a Internet):
 
-  ```bash
-  curl -H "X-API-Key: tu-clave" http://localhost:8000/api/v1/pharmacy/search -d '...'
-  ```
+```bash
+curl http://localhost:8000/api/v1/pharmacy/search -d '...'
+```
 
-  `/health` queda siempre fuera de la autenticación (uso típico de *healthchecks* de
-  infraestructura sin credenciales).
-- **CORS**: controlado por `CORS_ALLOWED_ORIGINS` (lista JSON de orígenes permitidos,
-  `["*"]` por defecto — apropiado para desarrollo local, debe restringirse en producción).
+CORS se controla por `CORS_ALLOWED_ORIGINS` (lista JSON de orígenes permitidos, `["*"]` por
+defecto — apropiado para desarrollo local, debe restringirse en producción).
 
 ## Pruebas automatizadas y cobertura
 
@@ -361,12 +367,13 @@ ruff format --check .                                       # formato
 ```
 
 La suite (`tests/unit/`, `tests/integration/`) es determinista y no requiere Docker, red ni
-credenciales: las dependencias externas (CIMA, Ollama, PostgreSQL, Gemini) se sustituyen por
-dobles en memoria vía `app.dependency_overrides` de FastAPI (ver
+credenciales: las dependencias externas (CIMA, Ollama, Groq, PostgreSQL, Gemini) se
+sustituyen por dobles en memoria vía `app.dependency_overrides` de FastAPI (ver
 [tests/integration/conftest.py](tests/integration/conftest.py)) o vía `httpx.MockTransport`/
 mocks directos para los clientes HTTP individuales (`tests/unit/test_cima_client.py`,
-`test_ollama_client.py`, `test_gemini_client.py`), aprovechando que la propia arquitectura de
-puertos del dominio hace estos dobles triviales de construir. Cobertura actual: **~87%**
+`test_ollama_client.py`, `test_groq_client.py`, `test_gemini_client.py`), aprovechando que la
+propia arquitectura de puertos del dominio hace estos dobles triviales de construir.
+Cobertura actual: **~87%**
 (umbral de CI: 85%, configurado en [.coveragerc](.coveragerc)). El pipeline de integración
 continua ([.github/workflows/ci.yml](.github/workflows/ci.yml)) ejecuta lint, formato, tests
 con cobertura, y un job independiente que aplica y revierte las migraciones Alembic contra un
@@ -405,8 +412,8 @@ duplicada en `alembic.ini`.
 Progreso detallado, decisiones de arquitectura y bugs resueltos se documentan de forma viva
 en [.memory/](.memory/) (`CONTEXT.md`, `ROADMAP.md`, `DECISIONS.md`, `BUGS.md`) siguiendo el
 protocolo de memoria descrito en [CLAUDE.md](CLAUDE.md). En resumen: los tres agentes, la
-orquestación end-to-end, la API REST completa (con autenticación, CORS y persistencia
-auditable), la ingesta desde CIMA (por lotes y automática al consultar), las migraciones
+orquestación end-to-end, la API REST completa (con CORS y persistencia auditable), la
+ingesta desde CIMA (por lotes y automática al consultar), las migraciones
 versionadas, la suite de tests con cobertura medida, la evaluación cuantitativa y el
 pipeline de CI están implementados y verificados contra servicios reales — no solo contra
 dobles de test. Limitaciones conocidas y aceptadas (fuera de alcance hasta ahora): la base

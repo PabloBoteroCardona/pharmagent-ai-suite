@@ -34,3 +34,6 @@ pydantic-settings>=2.6,<3.0
 
 # --- Evaluation (evaluation/run_evaluation.py) ---
 pillow>=10.4,<12.0
+
+# --- Web UI (src/presentation/app.py) ---
+streamlit>=1.38,<2.0

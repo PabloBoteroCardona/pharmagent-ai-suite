@@ -33,10 +33,10 @@ class RAGPharmAgent:
     en vivo como respaldo automático si la caché no tiene el fármaco."""
 
     def __init__(
-        self, drug_service: DrugService, ollama_client: LanguageModelPort
+        self, drug_service: DrugService, language_model: LanguageModelPort
     ) -> None:
         self._drug_service = drug_service
-        self._ollama_client = ollama_client
+        self._language_model = language_model
 
     async def answer_consultation(
         self, query: str, drug_name: str | None = None
@@ -67,7 +67,7 @@ class RAGPharmAgent:
         else:
             system_prompt = f"{SYSTEM_PROMPT}\n\n{NO_CONTEXT_NOTE}"
 
-        answer = await self._ollama_client.generate_completion(
+        answer = await self._language_model.generate_completion(
             prompt=query, system=system_prompt
         )
 

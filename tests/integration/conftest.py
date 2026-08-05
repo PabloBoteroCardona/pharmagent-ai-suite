@@ -1,6 +1,6 @@
 """Fixtures compartidas de los tests de integración de la API.
 
-Sustituye las dependencias de infraestructura (CIMA, Ollama, PostgreSQL, Gemini) por
+Sustituye las dependencias de infraestructura (CIMA, Ollama, Groq, PostgreSQL, Gemini) por
 dobles en memoria vía `app.dependency_overrides`, para que la suite se ejecute de
 forma determinista y sin red/Docker — igual que en CI. Cada doble satisface
 estructuralmente el puerto de dominio correspondiente (`src/domain/ports/`).
@@ -20,6 +20,7 @@ from src.infrastructure.api.routers.pharmacy_router import (
     get_cima_client,
     get_drug_repository,
     get_gemini_client,
+    get_groq_client,
     get_ollama_client,
     get_prescription_record_repository,
 )
@@ -91,8 +92,25 @@ class FakeCimaClient:
 
 
 class FakeOllamaClient:
+    """Doble de Ollama local usado exclusivamente para embeddings (`DrugService`) — desde
+    la migración de generación de texto a Groq, `RAGPharmAgent`/`SafetyCheckAgent` reciben
+    `FakeGroqClient` en su lugar (ver más abajo), así que `generate_completion` no debería
+    invocarse nunca a través de este doble."""
+
     async def generate_embedding(self, text: str) -> list[float]:
         return [0.1, 0.2, 0.3]
+
+    async def generate_completion(self, prompt: str, system: str = "") -> str:
+        raise NotImplementedError
+
+
+class FakeGroqClient:
+    """Doble de Groq usado por `RAGPharmAgent`/`SafetyCheckAgent` (generación de texto).
+    No implementa embeddings a propósito: igual que el `GroqClient` real, ese camino nunca
+    se ejercita (los embeddings siguen siendo responsabilidad exclusiva de Ollama local)."""
+
+    async def generate_embedding(self, text: str) -> list[float]:
+        raise NotImplementedError
 
     async def generate_completion(self, prompt: str, system: str = "") -> str:
         if system == LLM_SYSTEM_PROMPT:
@@ -157,6 +175,7 @@ def client() -> TestClient:
     """`TestClient` con las dependencias externas sustituidas por dobles en memoria."""
     app.dependency_overrides[get_cima_client] = lambda: FakeCimaClient()
     app.dependency_overrides[get_ollama_client] = lambda: FakeOllamaClient()
+    app.dependency_overrides[get_groq_client] = lambda: FakeGroqClient()
     app.dependency_overrides[get_drug_repository] = lambda: FakeDrugRepository()
     app.dependency_overrides[get_gemini_client] = lambda: FakeGeminiClient()
     app.dependency_overrides[get_prescription_record_repository] = lambda: (

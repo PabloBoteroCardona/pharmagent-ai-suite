@@ -6,16 +6,41 @@ PharmAgent AI Suite es un Trabajo de Fin de Máster (TFM) que implementa un sist
 multiagente, construido en Clean Architecture sobre Python/FastAPI, para el procesamiento
 de recetas médicas, la verificación de interacciones farmacológicas y la consulta de fichas
 técnicas oficiales (AEMPS/CIMA). Tres agentes — `PrescriptionAgent` (Gemini multimodal,
-modelo `gemini-flash-latest`), `SafetyCheckAgent` (base curada + razonamiento `llama3` local
-para combinaciones no cubiertas) y `RAGPharmAgent` (`llama3` local, RAG sobre caché
-`pgvector`) — implementados como clases Python `async` simples (no sobre Google ADK, ver
-nota de "Estado real" en [AGENTS.md](../AGENTS.md)), orquestables individualmente o
-encadenados vía `ProcessPrescriptionUseCase`. Persiste en PostgreSQL + `pgvector`
-(migraciones Alembic). API REST con autenticación opcional por API key y CORS. Ver
-[AGENTS.md](../AGENTS.md) y [SKILLS.md](../SKILLS.md) para el detalle de agentes y
+modelo `gemini-flash-latest`), `SafetyCheckAgent` (base curada + razonamiento
+`llama-3.1-8b-instant` vía Groq para combinaciones no cubiertas) y `RAGPharmAgent`
+(`llama-3.1-8b-instant` vía Groq para generación, embeddings `nomic-embed-text` en Ollama
+local, RAG sobre caché `pgvector`) — implementados como clases Python `async` simples (no
+sobre Google ADK, ver nota de "Estado real" en [AGENTS.md](../AGENTS.md)), orquestables
+individualmente o encadenados vía `ProcessPrescriptionUseCase`. Persiste en PostgreSQL +
+`pgvector` (migraciones Alembic). API REST sin autenticación (abierta para consumo del
+frontend local) y con CORS. Ver [AGENTS.md](../AGENTS.md) y [SKILLS.md](../SKILLS.md) para
+el detalle de agentes y
 herramientas, y [EVALUATION.md](../EVALUATION.md) para su evaluación cuantitativa.
 
 ## Estado actual
+
+**Eliminación completa de la autenticación por API key — ✅ completada.** Tras la migración a
+Groq, el usuario detectó que Streamlit devolvía `401` al llamar a la API (`API_KEY` real
+configurada en el `.env` local, no vacía como se pensaba). Pidió simplificar la UX por
+completo: la API debe ser totalmente abierta (sin `X-API-Key` nunca) y Streamlit no debe
+pedir ni URL ni API key al usuario final. Ver "Último hito verificado" para el detalle.
+
+---
+
+**Migración de Ollama local a Groq para generación de texto (RAG + SafetyCheckAgent) — ✅
+completada.** El usuario pidió mejorar la latencia percibida (~30s → <2s) sustituyendo la
+inferencia CPU de Ollama local por una API remota ultrarrápida. Ver más abajo para el
+detalle, incluyendo dos bugs reales encontrados y corregidos durante la verificación (uno de
+ellos, en `verify_api_key`, no relacionado con Groq — luego eliminado por completo, ver
+arriba).
+
+---
+
+**Panel web interactivo con Streamlit (`src/presentation/app.py`) — ✅ completado.** Tras
+cerrar [BLOQUE A]/[B]/[C]/[D] y la corrección de CIMA en vivo, el usuario pidió una interfaz
+gráfica de usuario para el TFM. Ver más abajo para el detalle.
+
+---
 
 **[BLOQUE D] "Profesionalización" — ✅ completado (10/10 pasos), + corrección posterior de
 CIMA en vivo en `/search`/`/consult` — ✅ completada.** Tras cerrar [BLOQUE A]/[B]/[C], se
@@ -32,6 +57,144 @@ de métrica de relevancia encontrado y corregido durante la verificación contra
 real). Todos los bloques A/B/C/D están cerrados y verificados, más esta corrección posterior.
 
 ## Último hito verificado
+
+**API REST abierta para consumo local (eliminación completa de la autenticación por API
+key) + limpieza de UX en Streamlit.** Ver [DECISIONS.md](DECISIONS.md) para el detalle
+completo. Resumen ejecutivo:
+
+- **Contexto real, no el que se pensaba**: el usuario reportó `401` al usar Streamlit
+  asumiendo que `API_KEY` estaba vacía en `.env` — en realidad estaba fijada a un valor real
+  (`secreto123`) desde algún momento anterior, y la corrección previa de `verify_api_key`
+  (tratar `""` como "desactivada") ya funcionaba correctamente para ese caso, no para este.
+  Se verificó y comunicó la discrepancia antes de tocar código.
+- **Decisión ampliada por el usuario**: en vez de solo pasarle la clave a Streamlit, pidió
+  eliminar la autenticación de la API por completo (consumo exclusivamente local) y limpiar
+  la UX de Streamlit quitando los controles de URL/API key.
+- **Backend**: `src/infrastructure/api/security.py` eliminado por completo (no un no-op
+  disfrazado) — `verify_api_key` ya no existe, `pharmacy_router.py` perdió
+  `dependencies=[Depends(verify_api_key)]`. `Settings.api_key` eliminado de
+  `settings.py`/`.env.example` (campo verdaderamente muerto tras quitar la única lectura).
+  `tests/unit/test_security.py` eliminado; `TestApiKeyAuthentication` en
+  `test_api_endpoints.py` sustituido por `TestNoAuthenticationRequired` (2 casos: sin
+  cabecera, y con una cabecera `X-API-Key` residual que debe ignorarse sin más).
+- **Streamlit**: sidebar sin la sección "⚙️ Conexión a la API" (URL + API key) — la URL base
+  se resuelve de `PHARMAGENT_API_BASE_URL` o `http://localhost:8000` por defecto,
+  transparente para el usuario. `_headers()`/`API_KEY_HEADER_NAME` eliminados; `api_post` ya
+  no envía ninguna cabecera de credenciales. Sidebar reducido a: título, estado de
+  salud (`/health`), lista de módulos, fuente de datos.
+- **Alcance de seguridad, explícito**: esta decisión hace la API completamente abierta —
+  apropiado solo para desarrollo/demo local (Streamlit y backend en la misma máquina), nunca
+  para un despliegue expuesto a Internet sin reinstaurar algún mecanismo de autenticación.
+  Documentado en el docstring de `pharmacy_router.py`, `.env.example`, `README.md`,
+  `AGENTS.md`.
+- **Verificación**: 120 tests (`pytest`, -7 netos: -5 `test_security.py`, -4
+  `TestApiKeyAuthentication`, +2 `TestNoAuthenticationRequired`), `ruff check .`/`ruff format
+  --check .` limpios. Verificado también con servicios reales arrancados: `uvicorn` real →
+  `POST /check-interactions` sin ninguna cabecera → `200` con razonamiento LLM real de Groq
+  (no solo la base curada); `streamlit run --server.headless true` → `200` con el sidebar ya
+  simplificado.
+
+---
+
+**Migración de Ollama local a Groq para generación de texto (RAG + SafetyCheckAgent).** Ver
+[DECISIONS.md](DECISIONS.md) para el detalle completo. Resumen ejecutivo:
+
+- **Motivación**: Ollama local por CPU tardaba ~30s por respuesta de generación (arranque en
+  frío incluido, ver [BUGS.md](BUGS.md)). El usuario pidió sustituirlo por Groq o Gemini
+  Flash, ultrarrápidos y gratuitos, manteniendo `LanguageModelPort` intacto.
+- **`GroqClient` nuevo** ([groq_client.py](../src/infrastructure/external/groq_client.py)):
+  cliente HTTP asíncrono sobre el endpoint de *chat completions* de Groq (compatible con
+  OpenAI), modelo `llama-3.1-8b-instant`. Se eligió Groq sobre Gemini Flash para no mezclar
+  `google_api_key` (reservada a `GeminiClient`/`PrescriptionAgent`) con un segundo consumidor
+  de contrato de privacidad distinto.
+- **Alcance limitado a generación, no a embeddings**: `DrugService` sigue con `OllamaClient`
+  sin cambios (`generate_embedding`) — la política "embeddings siempre en local" no se toca.
+  `GroqClient.generate_embedding` es un stub inerte (`[]`), nunca invocado en la práctica.
+  Cableado en `pharmacy_router.py`: `get_drug_service` → `get_ollama_client` (sin cambios);
+  `get_rag_pharm_agent`/`get_safety_check_agent` → `get_groq_client` (nuevo).
+- **Renombrado**: `RAGPharmAgent.__init__` cambió su parámetro `ollama_client` a
+  `language_model` (ya no apunta a un `OllamaClient`) — actualizado el único call site de
+  producción y los 6 usos en `tests/unit/test_pharmacy_agent.py`. `DrugService` conserva su
+  parámetro `ollama_client` sin cambios (ahí sí es literalmente Ollama).
+- **Privacidad, documentado con honestidad**: `AGENTS.md`/`README.md` afirmaban ejecución
+  "100% local" como garantía de privacidad de datos de salud (RGPD/LOPDGDD) — ya no es cierto
+  para el camino de razonamiento LLM (nombres de fármacos y la pregunta libre del usuario
+  salen hacia Groq; nunca datos identificativos del paciente). Ambos documentos actualizados
+  para no dejar una afirmación de privacidad obsoleta, en vez de callarlo.
+- **Bug real #1 (no relacionado con Groq)**: 15 tests fallaron con `401` tras el cableado —
+  este entorno tiene un `.env` local (no versionado) con `API_KEY=` explícitamente vacío junto
+  a las claves reales de Groq/Gemini. `pydantic-settings` parsea eso como `""`, no `None`, pero
+  `verify_api_key` solo desactivaba la auth para `None`, contradiciendo el contrato ya
+  documentado en `.env.example` ("Vacío/ausente = desactivada"). Corregido a `if not
+  settings.api_key: return` ([security.py](../src/infrastructure/api/security.py)), con test
+  de regresión. Cualquier despliegue local con `API_KEY=` vacío explícito habría quedado con
+  la API inaccesible sin previo aviso.
+- **Bug real #2 (propio, en el test nuevo)**: el primer intento de probar "sin API key" en
+  `GroqClient` pasaba `api_key=None` al constructor, pero este cae a `settings.groq_api_key`
+  precisamente en ese caso — con la clave real del `.env` local configurada, el test hacía una
+  petición HTTP real en vez de quedarse en el camino de degradación. Corregido forzando
+  `client._api_key` tras la construcción, replicando el patrón ya usado en
+  `test_gemini_client.py` para el mismo problema estructural.
+- **Verificación**: 127 tests (+12: `test_groq_client.py` con 11 casos, 1 de regresión en
+  `test_security.py`), `ruff check .`/`ruff format --check .` limpios. Suite verificada tanto
+  con el `.env` local real presente como temporalmente ausente (127/127 ambas veces) —
+  confirma que la garantía de "sin credenciales" del README sigue siendo cierta tras el fix.
+- **Latencia verificada contra la API real de Groq** (no solo dobles/mocks — la `GROQ_API_KEY`
+  real ya estaba presente en el `.env` local de este entorno): `GroqClient.generate_completion`
+  directo, pregunta de dosis de ibuprofeno → **0.27s**. `SafetyCheckAgent.check_interactions`
+  end-to-end con Groq real para un par no cubierto por la base curada (`paracetamol` +
+  `omeprazol`, camino de razonamiento LLM con salida JSON estructurada exigida por
+  `LLM_SYSTEM_PROMPT`) → **0.37s**, parseado correctamente a
+  `{"interactions": [...], "verdict": "apto_con_precaucion"}`. Ambos muy por debajo del
+  objetivo <2s y del ~30s de Ollama local en CPU que se sustituye — la mejora de latencia
+  percibida por el usuario queda confirmada con servicios reales, no solo esperada.
+
+---
+
+**Panel web interactivo con Streamlit (`src/presentation/app.py`).**
+
+- **Dependencia nueva**: `streamlit>=1.38,<2.0` en `requirements.txt` (sección "Web UI"),
+  instalada en `.venv`. `pillow` ya estaba presente (usada por `evaluation/`).
+- **Diseño**: cliente HTTP puro sobre la API REST vía `httpx` — `src/presentation/app.py` no
+  importa nada de `src/infrastructure`/`src/application`, para poder desplegarse como proceso
+  independiente que solo necesita conocer `PHARMAGENT_API_BASE_URL` (por defecto
+  `http://localhost:8000`) y, opcionalmente, `PHARMAGENT_API_KEY` (cabecera `X-API-Key`,
+  configurables también desde el sidebar). Decisión deliberada: mantiene la Clean
+  Architecture existente intacta (la UI es un cliente externo más, no una capa que se cuela
+  en el dominio).
+  Widgets/patrones: multiselect via lista dinámica en `session_state`.
+- **`layout="wide"`**, paleta sanitaria (azul médico `#0B5394`, verde menta `#26A69A`, gris
+  oscuro `#263238`) inyectada vía CSS en `st.markdown(unsafe_allow_html=True)`. Sidebar con
+  input de URL/API key y botón de comprobación de `/health` (verde/rojo).
+- **3 pestañas**, cada una contra un endpoint distinto de `pharmacy_router.py`:
+  1. "Flujo Asistencial Integrado" → `POST /process-prescription` (extracción +
+     interacciones automáticas), más una llamada adicional a `POST /search` por cada fármaco
+     extraído para mostrar su ficha CIMA (nº registro, principios activos, laboratorio) —
+     el endpoint orquestado no devuelve esa información, así que la pestaña la completa por
+     su cuenta.
+  2. "Consulta Clínica RAG & Chat" → `st.chat_message`/`st.chat_input` sobre `POST /consult`,
+     historial en `session_state`, fuentes CIMA en `st.expander`.
+  3. "Verificador Rápido de Interacciones" → lista dinámica de fármacos (añadir/quitar) sobre
+     `POST /check-interactions`.
+  Badges de color: `severity` (`LOW`/`MEDIUM`/`HIGH`/`SEVERE` — el dominio real, ver
+  `InteractionSeverity` en `src/domain/models/drug_interaction.py`) mapeado a verde
+  /amarillo/rojo/rojo; `verdict` (`apto`/`apto_con_precaucion`/`requiere_revision_medica`)
+  mapeado igual.
+  Estos son los valores reales usados por `SafetyCheckAgent`, no una versión inventada — se
+  cotejaron directamente en `safety_agent.py`/`drug_interaction.py` antes de escribir el
+  mapeo de colores para no alucinar strings de severidad/verdict.
+- **Patrón `if __name__ == "__main__": main()`**: Streamlit ejecuta el script con
+  `__name__ == "__main__"` al usar `streamlit run`, así que el guard permite tanto
+  `streamlit run src/presentation/app.py` como una importación normal (`import
+  src.presentation.app`) sin ejecutar `main()` — necesario para que el test unitario de
+  importación no requiera un `ScriptRunContext` de Streamlit activo.
+- **Test**: `tests/unit/test_presentation_app.py` — `importlib.import_module` +
+  `hasattr(module, "main")`.
+- **Verificado**: 96/96 tests unitarios verdes; `streamlit run src/presentation/app.py
+  --server.headless true` arrancado en real y comprobado `GET /` → 200 antes de detener el
+  proceso.
+
+---
 
 **CIMA en vivo como respaldo real de `/search` y `/consult`.** Ver
 [DECISIONS.md](DECISIONS.md) para el detalle completo. Resumen ejecutivo:
@@ -306,8 +469,13 @@ la escritura real en Postgres sigue bloqueada por el bug de `asyncpg`/Windows �
 ## Siguiente paso pendiente
 
 Sin un PASO/BLOQUE numerado asignado todavía — [BLOQUE A]/[B]/[C]/[D] están todos cerrados y
-verificados, más la corrección posterior de CIMA en vivo en `/search`/`/consult`. Candidatos
-para un bloque futuro (no priorizados por el usuario):
+verificados, la corrección posterior de CIMA en vivo en `/search`/`/consult`, y el panel web
+Streamlit, también. Candidatos para un bloque futuro (no priorizados por el usuario):
+
+0. Lanzar la API (`uvicorn src.infrastructure.api.main:app --port 8000`) y el panel
+   (`streamlit run src/presentation/app.py`) juntos y probar el flujo completo en navegador
+   real (subida de receta real, chat, verificador) — hecho solo un arranque headless de
+   humo (`GET /` → 200), no una sesión de usuario real con la API activa detrás.
 
 1. Desacoplar `DrugRepositoryPort` de `DrugModel` (ORM) con una entidad de dominio `Drug`
    pura (limitación aceptada desde BLOQUE A).
