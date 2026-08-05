@@ -12,6 +12,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src ./src
+COPY alembic.ini ./alembic.ini
+COPY migrations ./migrations
 
 RUN chown -R pharmagent:pharmagent /app
 USER pharmagent

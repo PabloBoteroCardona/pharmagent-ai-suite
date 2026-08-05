@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from src.infrastructure.models import DrugModel
+    from src.infrastructure.models import DrugModel, PrescriptionRecordModel
 
 
 @runtime_checkable
@@ -62,3 +62,16 @@ class PrescriptionVisionPort(Protocol):
     async def analyze_prescription_image(
         self, image_bytes: bytes, mime_type: str = "image/jpeg"
     ) -> dict: ...
+
+
+@runtime_checkable
+class PrescriptionRecordRepositoryPort(Protocol):
+    """Persistencia auditable del resultado de `ProcessPrescriptionUseCase`."""
+
+    async def save(
+        self,
+        drugs: list[dict],
+        advertencias: list[str],
+        safety_check: dict | None,
+        patient_id: str | None = None,
+    ) -> PrescriptionRecordModel: ...

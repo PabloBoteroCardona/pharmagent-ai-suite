@@ -37,6 +37,9 @@ services:
       # valores de `.env` (pensados para ejecutar la API fuera de Docker).
       DATABASE_URL: postgresql+asyncpg://pharmagent:pharmagent_pass@postgres:5432/pharmagent_db
       OLLAMA_BASE_URL: http://ollama:11434
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn src.infrastructure.api.main:app --host 0.0.0.0 --port 8000"
     depends_on:
       postgres:
         condition: service_healthy

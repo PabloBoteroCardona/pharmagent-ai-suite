@@ -23,7 +23,7 @@ from src.infrastructure.database import get_db_session
 from src.infrastructure.external.cima_client import CimaAPIClient
 from src.infrastructure.external.gemini_client import GeminiClient
 from src.infrastructure.external.ollama_client import OllamaClient
-from src.infrastructure.repositories import DrugRepository
+from src.infrastructure.repositories import DrugRepository, PrescriptionRecordRepository
 from src.use_cases.consult_drug_rag import ConsultDrugRAGUseCase
 from src.use_cases.process_prescription import ProcessPrescriptionUseCase
 
@@ -89,12 +89,23 @@ def get_safety_check_agent(
     return SafetyCheckAgent(language_model=ollama_client)
 
 
+def get_prescription_record_repository(
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> PrescriptionRecordRepository:
+    return PrescriptionRecordRepository(session)
+
+
 def get_process_prescription_use_case(
     prescription_agent: PrescriptionAgent = Depends(get_prescription_agent),  # noqa: B008
     safety_agent: SafetyCheckAgent = Depends(get_safety_check_agent),  # noqa: B008
+    record_repository: PrescriptionRecordRepository = Depends(  # noqa: B008
+        get_prescription_record_repository
+    ),
 ) -> ProcessPrescriptionUseCase:
     return ProcessPrescriptionUseCase(
-        prescription_agent=prescription_agent, safety_agent=safety_agent
+        prescription_agent=prescription_agent,
+        safety_agent=safety_agent,
+        record_repository=record_repository,
     )
 
 

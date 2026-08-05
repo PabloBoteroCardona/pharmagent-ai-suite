@@ -106,3 +106,76 @@ class TestProcessPrescriptionUseCase:
 
         safety_agent.check_interactions.assert_not_called()
         assert result["safety_check"] is None
+
+    @pytest.mark.asyncio
+    async def test_does_not_persist_when_no_repository_injected(self) -> None:
+        prescription_agent = AsyncMock(spec=PrescriptionAgent)
+        prescription_agent.extract_prescription.return_value = {
+            "drugs": [{"farmaco": "Ibuprofeno"}],
+            "advertencias": [],
+        }
+        safety_agent = AsyncMock(spec=SafetyCheckAgent)
+        use_case = ProcessPrescriptionUseCase(
+            prescription_agent=prescription_agent,
+            safety_agent=safety_agent,
+            record_repository=None,
+        )
+
+        result = await use_case.execute(b"fake-bytes")
+
+        assert result["prescription"]["drugs"] == [{"farmaco": "Ibuprofeno"}]
+
+    @pytest.mark.asyncio
+    async def test_persists_record_when_repository_injected(self) -> None:
+        prescription_agent = AsyncMock(spec=PrescriptionAgent)
+        prescription_agent.extract_prescription.return_value = {
+            "drugs": [{"farmaco": "Warfarina"}, {"farmaco": "Aspirina"}],
+            "advertencias": ["Tomar con alimentos."],
+        }
+        safety_agent = AsyncMock(spec=SafetyCheckAgent)
+        safety_check_result = {
+            "interactions": [
+                {"primary_drug": "warfarina", "secondary_drug": "aspirina"}
+            ],
+            "verdict": "requiere_revision_medica",
+        }
+        safety_agent.check_interactions.return_value = safety_check_result
+        record_repository = AsyncMock()
+        use_case = ProcessPrescriptionUseCase(
+            prescription_agent=prescription_agent,
+            safety_agent=safety_agent,
+            record_repository=record_repository,
+        )
+
+        await use_case.execute(b"fake-bytes", patient_id="paciente-1")
+
+        record_repository.save.assert_awaited_once_with(
+            drugs=[{"farmaco": "Warfarina"}, {"farmaco": "Aspirina"}],
+            advertencias=["Tomar con alimentos."],
+            safety_check=safety_check_result,
+            patient_id="paciente-1",
+        )
+
+    @pytest.mark.asyncio
+    async def test_persists_record_with_none_safety_check_for_single_drug(self) -> None:
+        prescription_agent = AsyncMock(spec=PrescriptionAgent)
+        prescription_agent.extract_prescription.return_value = {
+            "drugs": [{"farmaco": "Ibuprofeno"}],
+            "advertencias": [],
+        }
+        safety_agent = AsyncMock(spec=SafetyCheckAgent)
+        record_repository = AsyncMock()
+        use_case = ProcessPrescriptionUseCase(
+            prescription_agent=prescription_agent,
+            safety_agent=safety_agent,
+            record_repository=record_repository,
+        )
+
+        await use_case.execute(b"fake-bytes")
+
+        record_repository.save.assert_awaited_once_with(
+            drugs=[{"farmaco": "Ibuprofeno"}],
+            advertencias=[],
+            safety_check=None,
+            patient_id=None,
+        )

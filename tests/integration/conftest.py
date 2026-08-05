@@ -21,6 +21,7 @@ from src.infrastructure.api.routers.pharmacy_router import (
     get_drug_repository,
     get_gemini_client,
     get_ollama_client,
+    get_prescription_record_repository,
 )
 
 FAKE_DRUG = SimpleNamespace(
@@ -89,6 +90,27 @@ class FakeGeminiClient:
         return FAKE_PRESCRIPTION_ANALYSIS
 
 
+class FakePrescriptionRecordRepository:
+    def __init__(self) -> None:
+        self.saved_records: list[dict] = []
+
+    async def save(
+        self,
+        drugs: list[dict],
+        advertencias: list[str],
+        safety_check: dict | None,
+        patient_id: str | None = None,
+    ) -> SimpleNamespace:
+        record = {
+            "drugs": drugs,
+            "advertencias": advertencias,
+            "safety_check": safety_check,
+            "patient_id": patient_id,
+        }
+        self.saved_records.append(record)
+        return SimpleNamespace(**record)
+
+
 @pytest.fixture
 def client() -> TestClient:
     """`TestClient` con las dependencias externas sustituidas por dobles en memoria."""
@@ -96,6 +118,9 @@ def client() -> TestClient:
     app.dependency_overrides[get_ollama_client] = lambda: FakeOllamaClient()
     app.dependency_overrides[get_drug_repository] = lambda: FakeDrugRepository()
     app.dependency_overrides[get_gemini_client] = lambda: FakeGeminiClient()
+    app.dependency_overrides[get_prescription_record_repository] = lambda: (
+        FakePrescriptionRecordRepository()
+    )
 
     with TestClient(app) as test_client:
         yield test_client

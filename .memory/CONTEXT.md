@@ -12,54 +12,68 @@ y [SKILLS.md](../SKILLS.md) para el detalle de agentes y herramientas.
 
 ## Estado actual
 
-**[BLOQUE D] "Profesionalización" — EN CURSO (pausado, sin verificar).** Tras cerrar
-[BLOQUE A]/[B]/[C], se pidió evaluar el proyecto con ojo crítico (ver evaluación completa en
-el historial de la conversación: puntos débiles señalados — `SafetyCheckAgent` sin LLM,
-`RAGPharmAgent` no consulta CIMA en vivo por petición, sin auth, sin CORS, sin persistencia
-real de `Prescription`, sin migraciones Alembic, sin evaluación cuantitativa, cobertura de
-tests superficial). El usuario pidió corregir "todo lo necesario para que quede un proyecto
-profesional"; se acordó (decisión propia, tras rechazar el usuario una pregunta de
-alcance — instrucción: proceder con criterio propio) implementar en este orden:
+**[BLOQUE D] "Profesionalización" — EN CURSO, pasos 1-6 de 10 completados y verificados.**
+Tras cerrar [BLOQUE A]/[B]/[C], se pidió evaluar el proyecto con ojo crítico (puntos débiles
+señalados: `SafetyCheckAgent` sin LLM, `RAGPharmAgent` no consulta CIMA en vivo por petición,
+sin auth, sin CORS, sin persistencia real de `Prescription`, sin migraciones Alembic, sin
+evaluación cuantitativa, cobertura de tests superficial). El usuario pidió corregir "todo lo
+necesario para que quede un proyecto profesional"; se acordó (decisión propia, instrucción
+del usuario: proceder con criterio propio) implementar en este orden:
 
-1. CORS + autenticación por API key — **código escrito, sin verificar con ruff/pytest**.
-2. Dockerfile de la API + servicio en `docker-compose.yml` — pendiente.
-3. Orquestación end-to-end receta→extracción→interacciones (nuevo caso de uso + endpoint) — pendiente.
-4. `SafetyCheckAgent`: capa de razonamiento con Ollama para combinaciones fuera de la tabla curada (nunca contradice la tabla; ante duda, siempre `requiere_revision_medica`) — pendiente.
-5. Persistencia real de `Prescription`/`PrescribedDrug` (modelo ORM + repositorio) — pendiente.
-6. Migraciones Alembic (sustituir `create_all`) — pendiente.
-7. Tests directos de `CimaAPIClient`/`OllamaClient`/`GeminiClient` (manejo de errores) — pendiente.
-8. `pytest-cov` + umbral de cobertura en CI — pendiente.
-9. Dataset de evaluación sintético + script de métricas + `EVALUATION.md` — pendiente.
-10. Actualizar README/AGENTS/SKILLS y memoria con el estado final — pendiente.
+1. ✅ CORS + autenticación por API key.
+2. ✅ Dockerfile de la API + servicio en `docker-compose.yml`.
+3. ✅ Orquestación end-to-end receta→extracción→interacciones (nuevo caso de uso + endpoint).
+4. ✅ `SafetyCheckAgent`: capa de razonamiento con Ollama para combinaciones fuera de la tabla curada.
+5. ✅ Persistencia real de recetas procesadas (modelo ORM + repositorio).
+6. ✅ Migraciones Alembic (sustituye `create_all`/`init_db.py`, eliminado).
+7. ⬜ Tests directos de `CimaAPIClient`/`OllamaClient`/`GeminiClient` (manejo de errores) — **siguiente paso**.
+8. ⬜ `pytest-cov` + umbral de cobertura en CI.
+9. ⬜ Dataset de evaluación sintético + script de métricas + `EVALUATION.md`.
+10. ⬜ Actualizar README/AGENTS/SKILLS y memoria con el estado final.
 
-**Cambios ya escritos en disco (paso 1, sin `ruff check`/`pytest` ejecutados todavía —
-verificar primero al retomar):**
-- [settings.py](../src/infrastructure/config/settings.py): nuevos campos `api_key: str | None = None`
-  y `cors_allowed_origins: list[str] = ["*"]`.
-- [security.py](../src/infrastructure/api/security.py) (nuevo): `verify_api_key`, dependencia
-  FastAPI que valida la cabecera `X-API-Key` contra `settings.api_key`; si `api_key` es
-  `None` (por defecto en local/CI), la autenticación queda desactivada.
-- [pharmacy_router.py](../src/infrastructure/api/routers/pharmacy_router.py): el `APIRouter`
-  ahora declara `dependencies=[Depends(verify_api_key)]` a nivel de router (protege los 5
-  endpoints existentes de una vez).
-- [main.py](../src/infrastructure/api/main.py): `app.add_middleware(CORSMiddleware,
-  allow_origins=settings.cors_allowed_origins, ...)`.
-- [.env.example](../.env.example): añadidas `API_KEY=` y `CORS_ALLOWED_ORIGINS=["*"]`.
-- [tests/unit/test_security.py](../tests/unit/test_security.py) (nuevo): 4 tests de
-  `verify_api_key` (sin key configurada, key correcta, key ausente, key incorrecta) usando
-  `monkeypatch.setattr(security.settings, "api_key", ...)`.
+**Resumen de los pasos 1-6 (todos verificados con `ruff check .`, `ruff format --check .` y
+`pytest` en verde; varios además contra servicios reales, no solo dobles — ver detalle):**
 
-**Pendiente inmediato al retomar** (siguiente acción exacta, interrumpida a mitad de edición):
-estaba editando
-[tests/integration/test_api_endpoints.py](../tests/integration/test_api_endpoints.py) para
-añadir un test de integración que confirme que, con `settings.api_key` configurada vía
-`monkeypatch`, una petición sin cabecera `X-API-Key` devuelve 401 y con la cabecera correcta
-pasa — esa edición **no se llegó a aplicar** (el usuario interrumpió la sesión antes). El
-archivo sigue en su estado de [BLOQUE C] (sin import de `security`, sin esa clase de test).
-Tras completarla: ejecutar `ruff check .`, `ruff format --check .` y `pytest` para verificar
-que nada se rompió (en particular, que `dependencies=[Depends(verify_api_key)]` en el router
-no afecta a los tests existentes — no debería, porque `settings.api_key` es `None` por
-defecto en este entorno) antes de continuar con el punto 2 (Dockerfile).
+- **1-2 (CORS + API key + Docker)**: `settings.api_key`/`cors_allowed_origins` nuevos;
+  [security.py](../src/infrastructure/api/security.py) (`verify_api_key`, dependencia a
+  nivel de router); `CORSMiddleware` en `main.py`.
+  [Dockerfile](../Dockerfile) (`python:3.12-slim`, usuario no-root) + servicio `api` en
+  [docker-compose.yml](../docker-compose.yml) — build y arranque del contenedor verificados
+  con Docker Desktop real (`/health` → 200 dentro del contenedor).
+- **3 (orquestación)**: [`ProcessPrescriptionUseCase`](../src/use_cases/process_prescription.py)
+  encadena `PrescriptionAgent` → `SafetyCheckAgent` (solo si se extraen 2+ fármacos);
+  `POST /api/v1/pharmacy/process-prescription`.
+- **4 (SafetyCheckAgent + LLM)**: diseño híbrido — la base curada sigue siendo la fuente
+  **autoritativa** (si aplica, nunca se consulta al LLM); para combinaciones no cubiertas, si
+  hay un `LanguageModelPort` inyectado (Ollama), se le consulta con un prompt restrictivo;
+  cada interacción lleva `source: "curated"|"llm"`. Ante JSON inválido o `uncertain: true`,
+  el veredicto por defecto es `requiere_revision_medica` (nunca aprobación silenciosa).
+  `check_interactions` es ahora `async`. **Verificado contra Ollama/llama3 real**:
+  metformina+furosemida (fuera de la tabla) generó una interacción plausible con
+  `source: "llm"`; warfarina+aspirina (en la tabla) no consultó al modelo.
+- **5 (persistencia)**: `PrescriptionRecordModel`
+  ([prescription_record_model.py](../src/infrastructure/models/prescription_record_model.py))
+  — registro auditable (JSON crudo de `drugs`/`advertencias`/`safety_check`), deliberadamente
+  NO mapeado a la entidad de dominio estricta `Prescription`/`PrescribedDrug` porque
+  `GeminiClient` devuelve texto libre no normalizado (`"cada 8 horas"`) y forzarlo a
+  `frequency_hours: int` introduciría conversión no verificada en datos de salud — decisión
+  documentada en el propio modelo. `PrescriptionRecordRepository` +
+  `PrescriptionRecordRepositoryPort`, inyectado opcionalmente en
+  `ProcessPrescriptionUseCase`. **Verificado con escritura y lectura reales en Postgres.**
+- **6 (Alembic)**: `alembic init -t async migrations`; `migrations/env.py` reconfigurado
+  para usar `settings.database_url` y `Base.metadata` (autogenerate real, no manual).
+  `src/infrastructure/init_db.py` **eliminado** (reemplazado por migraciones). Primera
+  migración `272aeb551e68` (tablas `drugs` + `prescription_records`), con un fix manual al
+  autogenerate (faltaba `import pgvector.sqlalchemy` y `CREATE EXTENSION IF NOT EXISTS
+  vector`). **Verificado con upgrade/downgrade/upgrade real contra Postgres**, y con el
+  contenedor Docker completo (`docker-compose up api` ejecuta `alembic upgrade head` antes
+  de arrancar Uvicorn). CI: nuevo job `migrations` en
+  [.github/workflows/ci.yml](../.github/workflows/ci.yml) que aplica y revierte la migración
+  contra un Postgres de servicio en GitHub Actions.
+
+**Nota**: tras dropear/recrear las tablas para generar la migración limpia, se re-ejecutó
+`python -m scripts.ingest_drugs` (12/12 fármacos re-indexados) — la caché de `drugs` está
+vacía hasta ese re-seed, ya hecho.
 
 ## Último hito verificado
 
@@ -262,23 +276,27 @@ la escritura real en Postgres sigue bloqueada por el bug de `asyncpg`/Windows �
 
 ## Siguiente paso pendiente
 
-**[BLOQUE D] "Profesionalización", paso 1 de 10 (CORS + API key), interrumpido a mitad de
-edición — ver detalle completo en "Estado actual" arriba.** Acción exacta al retomar:
+**[BLOQUE D] "Profesionalización", paso 7 de 10: tests directos de `CimaAPIClient`/
+`OllamaClient`/`GeminiClient`.** Pasos 1-6 completados y verificados (ver "Estado actual"
+arriba). Acción exacta al retomar:
 
-1. Terminar de editar
-   [tests/integration/test_api_endpoints.py](../tests/integration/test_api_endpoints.py):
-   importar `security` y `pytest`, añadir una clase de test que confirme que con
-   `settings.api_key` configurada (vía `monkeypatch`) una petición sin `X-API-Key` devuelve
-   401 y con la cabecera correcta pasa.
-2. Ejecutar `ruff check .`, `ruff format --check .` y `pytest` — confirmar 0 regresiones
-   sobre el trabajo ya escrito (settings, `security.py`, `pharmacy_router.py`, `main.py`,
-   `.env.example`, `tests/unit/test_security.py`).
-3. Continuar con el resto de la lista de [BLOQUE D] en orden: Dockerfile de la API +
-   `docker-compose.yml`, orquestación end-to-end (receta→extracción→interacciones),
-   razonamiento LLM en `SafetyCheckAgent`, persistencia real de `Prescription` + Alembic,
-   tests de clientes externos, `pytest-cov` en CI, dataset de evaluación sintético +
-   `EVALUATION.md`, y cierre con actualización de README/AGENTS/SKILLS/memoria.
+1. Crear `tests/unit/test_cima_client.py`, `test_ollama_client.py`, `test_gemini_client.py`
+   — cubrir el manejo de errores defensivo de cada cliente (que hoy solo se ejercita
+   indirectamente a través de los dobles en los tests de integración, nunca directamente):
+   `httpx.HTTPError`/`json.JSONDecodeError` capturados en `CimaAPIClient`/`OllamaClient`
+   (degradan a `[]`/`None`/`""`), y `APIError`/`JSONDecodeError`/`ValueError` en
+   `GeminiClient` (degrada a `{"drugs": [], "advertencias": []}`). Usar `httpx.MockTransport`
+   o mockear el cliente HTTP subyacente para simular timeouts, respuestas 5xx y cuerpos
+   vacíos/malformados sin depender de red real.
+2. Ejecutar `ruff check .`, `ruff format --check .`, `pytest`.
+3. Continuar con el resto de la lista de [BLOQUE D] en orden: `pytest-cov` + umbral de
+   cobertura en CI, dataset de evaluación sintético + script de métricas + `EVALUATION.md`,
+   y cierre con actualización de README/AGENTS/SKILLS/memoria (documentar todo lo añadido en
+   los pasos 1-9: auth, CORS, Docker, orquestación, SafetyCheckAgent híbrido, persistencia,
+   Alembic, tests de clientes, cobertura, evaluación).
 
 Candidatos de un bloque futuro posterior a [BLOQUE D] (no priorizados): desacoplar
 `DrugRepositoryPort` de `DrugModel` (ORM) con una entidad de dominio `Drug` pura; desplegar
-la API en un entorno remoto para la defensa del TFM.
+la API en un entorno remoto para la defensa del TFM; normalizar la extracción de
+`PrescriptionAgent` a la entidad de dominio `Prescription`/`PrescribedDrug` cuando el modelo
+devuelva campos estructurados en vez de texto libre.
