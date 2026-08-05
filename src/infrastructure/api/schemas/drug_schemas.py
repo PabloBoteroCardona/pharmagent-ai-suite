@@ -57,6 +57,18 @@ class ConsultationRequest(BaseModel):
     )
 
 
+class ConsultationSourceItem(BaseModel):
+    """Un fármaco usado como contexto de una respuesta de `POST /consult`, con enlaces
+    a su documentación oficial en CIMA (ficha técnica y prospecto) cuando está
+    disponible — permite al usuario consultar la fuente original completa."""
+
+    model_config = ConfigDict(strict=True)
+
+    nombre: str
+    ficha_tecnica_url: str | None = None
+    prospecto_url: str | None = None
+
+
 class ConsultationResponse(BaseModel):
     """Respuesta del `RAGPharmAgent` a una consulta."""
 
@@ -64,7 +76,7 @@ class ConsultationResponse(BaseModel):
 
     query: str
     response: str
-    sources: list[str] = Field(default_factory=list)
+    sources: list[ConsultationSourceItem] = Field(default_factory=list)
     source: str = Field(
         default="none",
         description="'cache' | 'live' | 'none' — ver DrugSearchResponse.source.",

@@ -3,6 +3,110 @@
 Registro de decisiones clave de arquitectura tomadas durante el desarrollo, complementario a
 los ADR formales en [docs/adr/](../docs/adr/).
 
+## Documentación enriquecida en `/consult`: ficha técnica + prospecto + enlaces oficiales
+
+**Contexto**: el usuario probó la pestaña de chat RAG con naproxeno y ocrelizumab y encontró
+las respuestas demasiado básicas — CIMA tiene mucha más información (ficha técnica y
+prospecto completos, visibles en `cima.aemps.es/cima/dochtml/{ft,p}/{nregistro}/...`) que la
+que el sistema estaba usando. Pidió que la consulta buscara en esas fuentes y aportara la
+documentación relevante (enlaces incluidos).
+
+**Decisión — ficha técnica como fuente nueva, no solo prospecto**: hasta ahora
+`DrugService`/`RAGPharmAgent` solo usaban el prospecto (`docSegmentado/contenido/2`,
+lenguaje divulgativo para el paciente) — la ficha técnica (`tipo=1`, información clínica
+completa: posología exacta, farmacocinética, contraindicaciones, interacciones) nunca se
+consultaba. Se añadió `CimaAPIClient.get_ficha_tecnica_html` (comparte implementación con
+`get_prospecto_html` vía `_get_documento_segmentado_html`, solo cambia el `tipo`), se amplió
+`CimaDataSourcePort`, y `DrugService.fetch_and_index_drug` ahora pide y guarda ambas. El
+`SYSTEM_PROMPT` de `RAGPharmAgent` indica al modelo que prefiera la ficha técnica para
+preguntas clínicas/de dosis. `DrugModel.documento_html` (que siempre fue prospecto, nunca
+ficha técnica pese al nombre genérico) se renombró a `prospecto_html`, y se añadieron
+`ficha_tecnica_html`, `prospecto_url`, `ficha_tecnica_url` — estas dos últimas extraídas del
+campo `docs[].urlHtml` que el detalle de medicamento de CIMA ya incluye, sin llamada de red
+adicional. Migración `7862d9ea1d65`: `alter_column` para el renombrado (Alembic autogenerate
+no detecta renombrados, solo ve "columna eliminada + columna nueva" — usar `add_column`/
+`drop_column` como sugiere el autogenerate habría borrado el prospecto ya cacheado de los
+fármacos indexados hasta ahora; se corrigió la migración a mano antes de aplicarla).
+
+**Decisión — embedding de búsqueda sin cambios**: el texto usado para generar el embedding de
+`fetch_and_index_drug` sigue siendo solo nombre + principios activos + prospecto, sin la
+ficha técnica. Añadirla habría cambiado la geometría de los embeddings nuevos frente a los ya
+existentes en caché, invalidando silenciosamente el umbral `MAX_RELEVANT_COSINE_DISTANCE`
+calibrado empíricamente (ver sección "CIMA en vivo..." más abajo). La ficha técnica se guarda
+y se usa solo como contexto adicional para el LLM, no para la búsqueda semántica.
+
+**Decisión — `sources` pasa de lista de nombres a lista de objetos con enlaces**: para poder
+"aportar la documentación relevante" tal como pidió el usuario, `RAGPharmAgent.answer_consultation`
+devuelve ahora `sources: [{"nombre", "ficha_tecnica_url", "prospecto_url"}, ...]` en vez de
+`sources: [nombre, ...]` — cambio de contrato reflejado en el esquema Pydantic
+(`ConsultationSourceItem` nuevo en `drug_schemas.py`) y en Streamlit (enlaces markdown
+clicables en el desplegable "Fuentes CIMA / AEMPS" en vez de una simple lista de texto).
+
+**Bug real #1 encontrado y corregido — CIMA devuelve algunos documentos como texto plano, no
+JSON**: al verificar con naproxeno real (nregistro 68435, "Naproxeno Normon"), `prospecto_html`/
+`ficha_tecnica_html` seguían llegando vacíos en la caché pese a que `curl` directo contra CIMA
+mostraba contenido real y completo. Investigado dentro del propio contenedor: el endpoint
+`docSegmentado/contenido/{tipo}` de CIMA **no siempre** envuelve el contenido en
+`{"secciones": [...]}` — para algunos medicamentos (aparentemente genéricos o documentos más
+antiguos) devuelve el texto completo directamente como cuerpo plano. Ambos casos declaran
+idéntico `Content-Type: text/plain;charset=UTF-8` (confirmado comparando nregistro=68435,
+texto plano, contra nregistro=83348, JSON con `secciones` — mismo Content-Type en los dos),
+así que no hay forma de distinguirlos de antemano por cabecera. El código original solo sabía
+parsear el caso JSON; ante `JSONDecodeError` en el caso texto-plano degradaba silenciosamente
+a `None` — el mismo patrón defensivo "nunca propagar excepciones" que en el resto del cliente,
+pero aquí ocultaba un caso de éxito real como si fuera un fallo. Es muy probablemente la causa
+raíz original de la queja "la información es muy básica": el prospecto ya se intentaba usar
+desde antes de esta sesión, pero fallaba en silencio para una parte desconocida (no medida) de
+los medicamentos reales de CIMA. Corregido en `_get_documento_segmentado_html`
+([cima_client.py](../src/infrastructure/external/cima_client.py)): si `.json()` lanza
+`JSONDecodeError`, se usa `response.text` como contenido en vez de `None`. Verificado con el
+mismo nregistro real: antes 0 bytes en ambos campos, después 18992 (prospecto) + 29004 (ficha
+técnica).
+
+**Bug real #2 (límite externo del proveedor, no defecto de nuestro código) — Groq TPM**: con
+el contexto ya enriquecido y el bug anterior corregido, `/consult` empezó a devolver
+`response: ""` para preguntas con los 3 fármacos de contexto (límite de
+`search_drugs_semantic(..., limit=3)`). Causa: Groq en nivel gratuito (`on_demand`) limita a
+**6000 tokens/minuto**; ficha técnica + prospecto sin truncar pueden sumar 40-60k caracteres
+*cada uno*, y con 3 fármacos el prompt superó los 22.5k tokens en una prueba real — confirmado
+con una petición directa a la API de Groq, rechazada con `413`/`rate_limit_exceeded`
+("Requested 22538" contra un límite de 6000). Corregido con `MAX_CHARS_PER_DOCUMENT = 2500`
+en [pharmacy_agent.py](../src/application/agents/pharmacy_agent.py): cada documento (ficha
+técnica y prospecto, por separado) se trunca a ese presupuesto antes de entrar al prompt, con
+un marcador `[…contenido truncado…]` explícito. En el peor caso (3 fármacos, ambos documentos
+al máximo) el prompt se queda en ~3000-4000 tokens, con margen para `SYSTEM_PROMPT` y la
+respuesta generada. **Limitación aceptada, no resuelta del todo**: 6000 TPM es un límite
+*acumulado* por minuto, no solo por petición — con volumen alto de peticiones seguidas en la
+misma ventana (como ocurrió en esta misma sesión de verificación) el límite puede seguir
+alcanzándose puntualmente incluso con el truncado; no es un fallo del código, se recupera solo
+pasado el minuto (verificado explícitamente: una petición vacía, reintentada ~30s después,
+devolvió respuesta completa). Solución completa (subir de nivel en Groq, o degradar a menos
+fármacos de contexto bajo carga) fuera de alcance de esta sesión.
+
+**Verificación con datos y servicios reales** (no solo dobles de test): tras cada corrección
+se reconstruyó la imagen Docker (`docker compose build api && docker compose up -d api`) y se
+verificó contra la API real de CIMA/Groq/Postgres. `POST /consult` con `drug_name=Naproxeno` y
+una pregunta sobre dosis devolvió dosis exactas por presentación (500-1000mg/día,
+550-1100mg/día según la presentación) citando la ficha técnica real, con `sources` incluyendo
+los 3 enlaces `ficha_tecnica_url`/`prospecto_url` reales de CIMA. Lo mismo para ibuprofeno
+(contraindicaciones exactas: hipersensibilidad, enfermedad hepática/renal grave, hemorragia
+digestiva activa, tercer trimestre de embarazo, etc.). Verificado también en Streamlit vía
+`streamlit.testing.v1.AppTest` contra la API real (no un mock): sin excepciones, `sources` con
+los enlaces esperados en `session_state`. Se truncó y re-ingestó por completo la caché de los
+12 fármacos originales (`python -m scripts.ingest_drugs`, ejecutado desde el host — el
+contenedor Docker no tiene `scripts/` copiado, solo `src`/`alembic.ini`/`migrations`) para que
+reflejen los campos nuevos de inmediato en vez de esperar al próximo refresco natural.
+
+**Verificación de tests**: 131 tests (`pytest`, +13 nuevos: fallback texto-plano y
+`get_ficha_tecnica_html` en `test_cima_client.py`; `TestFetchAndIndexDrug` — construcción de
+`drug_data`, exclusión de la ficha técnica del embedding, URLs ausentes — en
+`test_drug_service.py`; inclusión de ficha técnica en el prompt y truncado por límite de Groq
+en `test_pharmacy_agent.py`; ajustes de formato en `test_consult_use_case.py`/
+`test_api_endpoints.py`/`conftest.py` para el nuevo `sources` estructurado), `ruff check .`/
+`ruff format --check .` limpios.
+
+---
+
 ## API REST abierta para consumo local (eliminación completa de la autenticación por API key)
 
 **Contexto**: tras la migración a Groq (ver siguiente sección más abajo), el usuario reportó

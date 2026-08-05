@@ -1,8 +1,8 @@
 """Servicio de aplicación: ingesta e indexación semántica de fármacos.
 
-Orquesta CIMA (fuente primaria en vivo), Ollama (embeddings locales) y
-PostgreSQL/pgvector (caché semántica), según la decisión de arquitectura en
-[DECISIONS.md](../../../.memory/DECISIONS.md).
+Orquesta CIMA (fuente primaria en vivo — ficha, ficha técnica y prospecto), Ollama
+(embeddings locales) y PostgreSQL/pgvector (caché semántica), según la decisión de
+arquitectura en [DECISIONS.md](../../../.memory/DECISIONS.md).
 
 `search_drugs_semantic` consulta primero la caché vectorial (rápido, sin red externa) y,
 si no hay resultados, cae automáticamente a una búsqueda en vivo en CIMA usando `query`
@@ -25,11 +25,17 @@ from src.domain.ports import CimaDataSourcePort, DrugRepositoryPort, LanguageMod
 from src.infrastructure.models import DrugModel
 
 # Al caer al respaldo de CIMA en vivo (caché sin resultados), se indexan como máximo
-# estos fármacos aunque `limit` sea mayor — cada uno implica 2 llamadas HTTP a CIMA +
-# 1 a Ollama (embedding) + 1 escritura en Postgres, secuenciales; limitarlo mantiene la
-# latencia de una búsqueda "en frío" razonable (mismo criterio que scripts/ingest_drugs.py,
-# 3 resultados por término).
+# estos fármacos aunque `limit` sea mayor — cada uno implica 3 llamadas HTTP a CIMA
+# (ficha, ficha técnica, prospecto) + 1 a Ollama (embedding) + 1 escritura en Postgres,
+# secuenciales; limitarlo mantiene la latencia de una búsqueda "en frío" razonable (mismo
+# criterio que scripts/ingest_drugs.py, 3 resultados por término).
 LIVE_FALLBACK_MAX_RESULTS = 3
+
+# Valores de `tipo` usados tanto en `docSegmentado/contenido/{tipo}` (CimaAPIClient) como
+# en el campo `docs[].tipo` del detalle de medicamento — mismos códigos, dos superficies
+# distintas de la API de CIMA.
+FICHA_TECNICA_DOC_TIPO = 1
+PROSPECTO_DOC_TIPO = 2
 
 
 @dataclass
@@ -59,17 +65,23 @@ class DrugService:
         self._drug_repo = drug_repo
 
     async def fetch_and_index_drug(self, nregistro: str) -> DrugModel | None:
-        """Consulta un fármaco en CIMA, genera su embedding y lo persiste/actualiza en caché."""
+        """Consulta un fármaco en CIMA (ficha, ficha técnica y prospecto), genera su
+        embedding y lo persiste/actualiza en caché."""
         medicamento = await self._cima_client.get_medicamento_by_nregistro(nregistro)
         if medicamento is None:
             return None
 
         nombre = medicamento.get("nombre", "")
         pactivos = medicamento.get("pactivos")
-        secciones_html = await self._cima_client.get_prospecto_html(nregistro)
+        prospecto_html = await self._cima_client.get_prospecto_html(nregistro)
+        ficha_tecnica_html = await self._cima_client.get_ficha_tecnica_html(nregistro)
 
+        # El embedding de búsqueda usa solo nombre/principios activos/prospecto — no la
+        # ficha técnica — para no alterar la geometría de los embeddings ya calibrada
+        # (`MAX_RELEVANT_COSINE_DISTANCE`, ver drug_repository.py). La ficha técnica sí
+        # se guarda y se usa como contexto adicional para el LLM en `RAGPharmAgent`.
         texto_para_embedding = "\n".join(
-            parte for parte in (nombre, pactivos, secciones_html) if parte
+            parte for parte in (nombre, pactivos, prospecto_html) if parte
         )
         embedding = await self._ollama_client.generate_embedding(texto_para_embedding)
 
@@ -79,10 +91,25 @@ class DrugService:
             "pactivos": pactivos,
             "labtitular": medicamento.get("labtitular"),
             "cpres": medicamento.get("cpresc"),
-            "documento_html": secciones_html,
+            "prospecto_html": prospecto_html,
+            "ficha_tecnica_html": ficha_tecnica_html,
+            "prospecto_url": self._extract_doc_url(medicamento, PROSPECTO_DOC_TIPO),
+            "ficha_tecnica_url": self._extract_doc_url(
+                medicamento, FICHA_TECNICA_DOC_TIPO
+            ),
             "embedding": embedding or None,
         }
         return await self._drug_repo.save_drug(drug_data)
+
+    @staticmethod
+    def _extract_doc_url(medicamento: dict, tipo: int) -> str | None:
+        """Extrae la URL HTML pública del documento (ficha técnica `tipo=1`, prospecto
+        `tipo=2`) del campo `docs` que CIMA ya incluye en el detalle del medicamento —
+        evita una llamada de red adicional solo para construir el enlace de referencia."""
+        for doc in medicamento.get("docs", []):
+            if doc.get("tipo") == tipo:
+                return doc.get("urlHtml")
+        return None
 
     async def search_drugs_semantic(
         self, query: str, limit: int = 5

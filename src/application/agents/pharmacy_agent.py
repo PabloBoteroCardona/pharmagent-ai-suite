@@ -14,18 +14,41 @@ from src.domain.ports import LanguageModelPort
 SYSTEM_PROMPT = (
     "Eres un asistente farmacéutico que responde consultas sobre medicamentos autorizados "
     "en España (AEMPS/CIMA). Responde ÚNICAMENTE con la información técnica proporcionada "
-    "en el contexto a continuación (nombre, principios activos y secciones del prospecto). "
-    "No completes con conocimiento general no verificado ni inventes datos que no estén en "
-    "el contexto. Si el contexto no contiene información suficiente para responder con "
-    "certeza, indica explícitamente que no dispones de información verificada y recomienda "
-    "consultar a un profesional sanitario o farmacéutico. No emitas diagnósticos ni "
-    "sustituyas el criterio médico."
+    "en el contexto a continuación (nombre, principios activos, ficha técnica y prospecto). "
+    "La ficha técnica contiene la información clínica completa para profesionales "
+    "sanitarios (posología exacta, farmacocinética, contraindicaciones, interacciones, "
+    "efectos adversos) — prefiérela sobre el prospecto para preguntas clínicas o de "
+    "dosificación; el prospecto está en lenguaje divulgativo para el paciente. No completes "
+    "con conocimiento general no verificado ni inventes datos que no estén en el contexto. "
+    "Si el contexto no contiene información suficiente para responder con certeza, indica "
+    "explícitamente que no dispones de información verificada y recomienda consultar a un "
+    "profesional sanitario o farmacéutico. No emitas diagnósticos ni sustituyas el criterio "
+    "médico."
 )
 
 NO_CONTEXT_NOTE = (
     "Contexto: no se encontró ningún medicamento relevante ni en la caché local ni en "
     "CIMA (AEMPS) en vivo para esta consulta."
 )
+
+# Groq (nivel gratuito, "on_demand") limita a 6000 tokens/minuto — con hasta 3 fármacos de
+# contexto (`search_drugs_semantic(..., limit=3)`), una ficha técnica + prospecto sin
+# truncar puede sumar 40-60k caracteres *por fármaco*, superando el límite con facilidad y
+# degradando a una respuesta vacía sin aviso (verificado: una petición de 22.5k tokens fue
+# rechazada por Groq con 413 "Request too large"/`rate_limit_exceeded`). Se trunca cada
+# documento a este presupuesto de caracteres — con los 3 fármacos al límite de búsqueda,
+# el prompt completo (ficha técnica + prospecto de cada uno, más `SYSTEM_PROMPT`) se queda
+# en ~3000-3500 tokens, con margen para la respuesta generada dentro del límite de 6000.
+MAX_CHARS_PER_DOCUMENT = 2500
+TRUNCATION_MARKER = "\n[…contenido truncado por límite de tamaño…]"
+
+
+def _truncated(text: str | None) -> str:
+    if not text:
+        return "no disponible"
+    if len(text) <= MAX_CHARS_PER_DOCUMENT:
+        return text
+    return text[:MAX_CHARS_PER_DOCUMENT] + TRUNCATION_MARKER
 
 
 class RAGPharmAgent:
@@ -60,7 +83,8 @@ class RAGPharmAgent:
             context = "\n\n".join(
                 f"Medicamento: {drug.nombre}\n"
                 f"Principios activos: {drug.pactivos or 'no disponible'}\n"
-                f"Prospecto: {drug.documento_html or 'no disponible'}"
+                f"Ficha técnica: {_truncated(drug.ficha_tecnica_html)}\n"
+                f"Prospecto: {_truncated(drug.prospecto_html)}"
                 for drug in context_drugs
             )
             system_prompt = f"{SYSTEM_PROMPT}\n\n{context}"
@@ -74,6 +98,13 @@ class RAGPharmAgent:
         return {
             "query": query,
             "response": answer,
-            "sources": [drug.nombre for drug in context_drugs],
+            "sources": [
+                {
+                    "nombre": drug.nombre,
+                    "ficha_tecnica_url": drug.ficha_tecnica_url,
+                    "prospecto_url": drug.prospecto_url,
+                }
+                for drug in context_drugs
+            ],
             "source": search_result.source,
         }

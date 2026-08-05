@@ -17,7 +17,13 @@ class TestConsultDrugRAGUseCase:
         rag_agent.answer_consultation.return_value = {
             "query": "¿qué dosis de ibuprofeno es adecuada?",
             "response": "La dosis habitual en adultos es de 400-600 mg cada 8 horas.",
-            "sources": ["Ibuprofeno 600mg"],
+            "sources": [
+                {
+                    "nombre": "Ibuprofeno 600mg",
+                    "ficha_tecnica_url": "https://cima.aemps.es/cima/dochtml/ft/12345/FT_12345.html",
+                    "prospecto_url": "https://cima.aemps.es/cima/dochtml/p/12345/P_12345.html",
+                }
+            ],
             "source": "cache",
         }
         use_case = ConsultDrugRAGUseCase(rag_agent=rag_agent)
@@ -28,7 +34,7 @@ class TestConsultDrugRAGUseCase:
             "¿qué dosis de ibuprofeno es adecuada?", drug_name=None
         )
         assert result["response"].startswith("La dosis habitual")
-        assert result["sources"] == ["Ibuprofeno 600mg"]
+        assert result["sources"][0]["nombre"] == "Ibuprofeno 600mg"
 
     @pytest.mark.asyncio
     async def test_forwards_drug_name_to_rag_agent(self) -> None:

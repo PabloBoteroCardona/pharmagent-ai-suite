@@ -30,7 +30,10 @@ FAKE_DRUG = SimpleNamespace(
     nombre="Ibuprofeno Test 600mg",
     pactivos="ibuprofeno",
     labtitular="Laboratorio Test S.A.",
-    documento_html="Indicado para el alivio del dolor leve a moderado.",
+    prospecto_html="Indicado para el alivio del dolor leve a moderado.",
+    ficha_tecnica_html="Posología: 600 mg cada 8 horas.",
+    ficha_tecnica_url="https://cima.aemps.es/cima/dochtml/ft/12345/FT_12345.html",
+    prospecto_url="https://cima.aemps.es/cima/dochtml/p/12345/P_12345.html",
 )
 
 FAKE_LIVE_DRUG_SEARCH_RESULT = {"nregistro": "99999", "nombre": "Paracetamol Test 1g"}
@@ -40,13 +43,26 @@ FAKE_LIVE_DRUG_DETAIL = {
     "pactivos": "paracetamol",
     "labtitular": "Laboratorio Live S.A.",
     "cpresc": "sin receta",
+    "docs": [
+        {
+            "tipo": 1,
+            "urlHtml": "https://cima.aemps.es/cima/dochtml/ft/99999/FT_99999.html",
+        },
+        {
+            "tipo": 2,
+            "urlHtml": "https://cima.aemps.es/cima/dochtml/p/99999/P_99999.html",
+        },
+    ],
 }
 FAKE_LIVE_DRUG = SimpleNamespace(
     nregistro="99999",
     nombre="Paracetamol Test 1g",
     pactivos="paracetamol",
     labtitular="Laboratorio Live S.A.",
-    documento_html="Prospecto de prueba en vivo.",
+    prospecto_html="Prospecto de prueba en vivo.",
+    ficha_tecnica_html="Ficha técnica de prueba en vivo.",
+    ficha_tecnica_url="https://cima.aemps.es/cima/dochtml/ft/99999/FT_99999.html",
+    prospecto_url="https://cima.aemps.es/cima/dochtml/p/99999/P_99999.html",
 )
 
 FAKE_RAG_RESPONSE_TEXT = "Respuesta simulada basada en el contexto de prueba."
@@ -89,6 +105,9 @@ class FakeCimaClient:
 
     async def get_prospecto_html(self, nregistro: str) -> str | None:
         return "Prospecto de prueba en vivo." if self._medicamento_detail else None
+
+    async def get_ficha_tecnica_html(self, nregistro: str) -> str | None:
+        return "Ficha técnica de prueba en vivo." if self._medicamento_detail else None
 
 
 class FakeOllamaClient:

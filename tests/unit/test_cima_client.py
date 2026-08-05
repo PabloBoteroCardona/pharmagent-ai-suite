@@ -136,6 +136,7 @@ class TestGetProspectoHtml:
     @pytest.mark.asyncio
     async def test_concatenates_html_fragments(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.path.endswith("/docSegmentado/contenido/2")
             return httpx.Response(
                 200,
                 json={
@@ -190,5 +191,105 @@ class TestGetProspectoHtml:
         client = _client_with_transport(handler)
 
         result = await client.get_prospecto_html("12345")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_raw_text_when_response_is_not_json(self) -> None:
+        """Bug real descubierto en producción — ver el mismo test en
+        `TestGetFichaTecnicaHtml` para el detalle completo: CIMA devuelve el prospecto
+        de algunos medicamentos como texto plano en vez de JSON con `secciones`, con
+        idéntico `Content-Type` en ambos casos."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                content=b"Prospecto completo en texto plano.",
+                headers={"content-type": "text/plain;charset=UTF-8"},
+            )
+
+        client = _client_with_transport(handler)
+
+        result = await client.get_prospecto_html("12345")
+
+        assert result == "Prospecto completo en texto plano."
+
+
+class TestGetFichaTecnicaHtml:
+    """Mismo mecanismo que `get_prospecto_html` (comparten `_get_documento_segmentado_html`),
+    salvo por el `tipo` de documento consultado (1 = ficha técnica, no 2 = prospecto)."""
+
+    @pytest.mark.asyncio
+    async def test_requests_tipo_1_and_concatenates_html_fragments(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.path.endswith("/docSegmentado/contenido/1")
+            return httpx.Response(
+                200,
+                json={
+                    "secciones": [
+                        {"contenido": "<p>Posología</p>"},
+                        {"contenido": "<p>Contraindicaciones</p>"},
+                    ]
+                },
+            )
+
+        client = _client_with_transport(handler)
+
+        result = await client.get_ficha_tecnica_html("12345")
+
+        assert result == "<p>Posología</p>\n<p>Contraindicaciones</p>"
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_secciones(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"secciones": []})
+
+        client = _client_with_transport(handler)
+
+        result = await client.get_ficha_tecnica_html("12345")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_http_error(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(503)
+
+        client = _client_with_transport(handler)
+
+        result = await client.get_ficha_tecnica_html("12345")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_raw_text_when_response_is_not_json(self) -> None:
+        """Bug real descubierto en producción: CIMA no siempre envuelve el contenido en
+        JSON con `secciones` — para algunos medicamentos (genéricos, documentos más
+        antiguos) devuelve el texto completo directamente como cuerpo plano, con el
+        mismo `Content-Type: text/plain` que el caso JSON (no se puede distinguir de
+        antemano). Antes de este comportamiento, esos casos perdían todo su contenido
+        silenciosamente (degradaban a `None`) pese a que CIMA sí tenía el dato."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                content="Ficha técnica completa en texto plano.".encode(),
+                headers={"content-type": "text/plain;charset=UTF-8"},
+            )
+
+        client = _client_with_transport(handler)
+
+        result = await client.get_ficha_tecnica_html("12345")
+
+        assert result == "Ficha técnica completa en texto plano."
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_non_json_response_body_is_empty(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, content=b"")
+
+        client = _client_with_transport(handler)
+
+        result = await client.get_ficha_tecnica_html("12345")
 
         assert result is None

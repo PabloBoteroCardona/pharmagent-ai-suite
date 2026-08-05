@@ -270,7 +270,13 @@ no búsqueda semántica):
 {
   "query": "¿qué dosis es adecuada para un adulto?",
   "response": "La dosis habitual en adultos es de 400-600 mg cada 8 horas...",
-  "sources": ["Ibuprofeno Test 600mg"],
+  "sources": [
+    {
+      "nombre": "Ibuprofeno Test 600mg",
+      "ficha_tecnica_url": "https://cima.aemps.es/cima/dochtml/ft/12345/FT_12345.html",
+      "prospecto_url": "https://cima.aemps.es/cima/dochtml/p/12345/P_12345.html"
+    }
+  ],
   "source": "cache"
 }
 ```

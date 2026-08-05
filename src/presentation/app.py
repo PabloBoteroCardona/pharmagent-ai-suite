@@ -298,6 +298,24 @@ def render_prescription_tab() -> None:
                 )
 
 
+def _render_consultation_sources(sources: list[dict]) -> None:
+    """Renderiza la lista de fármacos usados como contexto de una respuesta de
+    `/consult`, con enlaces directos a su ficha técnica y prospecto oficiales en CIMA
+    cuando la API los proporciona."""
+    with st.expander("📚 Fuentes CIMA / AEMPS"):
+        for source in sources:
+            nombre = source.get("nombre", "—")
+            links = []
+            if source.get("ficha_tecnica_url"):
+                links.append(f"[Ficha técnica]({source['ficha_tecnica_url']})")
+            if source.get("prospecto_url"):
+                links.append(f"[Prospecto]({source['prospecto_url']})")
+            line = f"- **{nombre}**"
+            if links:
+                line += " — " + " · ".join(links)
+            st.markdown(line)
+
+
 def render_consult_tab() -> None:
     st.subheader("💬 Consulta Clínica RAG & Chat")
     st.caption(
@@ -325,9 +343,7 @@ def render_consult_tab() -> None:
             if message.get("drug_name"):
                 st.caption(f"🔎 Búsqueda en CIMA acotada a: {message['drug_name']}")
             if message.get("sources"):
-                with st.expander("Fuentes CIMA / AEMPS"):
-                    for source in message["sources"]:
-                        st.markdown(f"- {source}")
+                _render_consultation_sources(message["sources"])
 
     query = st.chat_input("Escribe tu consulta clínica…")
     if query:
@@ -350,9 +366,7 @@ def render_consult_tab() -> None:
                 st.markdown(result.get("response", ""))
                 sources = result.get("sources", [])
                 if sources:
-                    with st.expander("Fuentes CIMA / AEMPS"):
-                        for source in sources:
-                            st.markdown(f"- {source}")
+                    _render_consultation_sources(sources)
                 st.caption(f"Procedencia de los datos: {result.get('source', 'none')}")
                 st.session_state["chat_messages"].append(
                     {

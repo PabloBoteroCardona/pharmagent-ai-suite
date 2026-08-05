@@ -118,7 +118,13 @@ class TestConsultEndpoint:
         body = response.json()
         assert body["query"] == "¿cómo se toma el ibuprofeno?"
         assert body["response"] == FAKE_RAG_RESPONSE_TEXT
-        assert body["sources"] == [FAKE_DRUG.nombre]
+        assert body["sources"] == [
+            {
+                "nombre": FAKE_DRUG.nombre,
+                "ficha_tecnica_url": FAKE_DRUG.ficha_tecnica_url,
+                "prospecto_url": FAKE_DRUG.prospecto_url,
+            }
+        ]
         assert body["source"] == "cache"
 
     def test_consult_falls_back_to_live_cima_using_drug_name(
@@ -145,7 +151,13 @@ class TestConsultEndpoint:
         assert response.status_code == 200
         body = response.json()
         assert body["source"] == "live"
-        assert body["sources"] == [FAKE_LIVE_DRUG_DETAIL["nombre"]]
+        assert body["sources"] == [
+            {
+                "nombre": FAKE_LIVE_DRUG_DETAIL["nombre"],
+                "ficha_tecnica_url": FAKE_LIVE_DRUG_DETAIL["docs"][0]["urlHtml"],
+                "prospecto_url": FAKE_LIVE_DRUG_DETAIL["docs"][1]["urlHtml"],
+            }
+        ]
 
     def test_consult_rejects_empty_query(self, client: TestClient) -> None:
         response = client.post("/api/v1/pharmacy/consult", json={"query": ""})

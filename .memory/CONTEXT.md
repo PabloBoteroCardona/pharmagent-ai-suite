@@ -19,11 +19,21 @@ herramientas, y [EVALUATION.md](../EVALUATION.md) para su evaluación cuantitati
 
 ## Estado actual
 
+**Documentación enriquecida en `/consult` (ficha técnica + prospecto + enlaces oficiales)
+— ✅ completada.** El usuario reportó que las respuestas del chat RAG eran "muy básicas"
+comparadas con la información real de CIMA (pasó enlaces de ejemplo de ficha técnica y
+prospecto de naproxeno). Ver "Último hito verificado" para el detalle — incluye un bug real
+de producción encontrado y corregido (CIMA devuelve algunos documentos como texto plano en
+vez de JSON, perdiéndose silenciosamente) y una limitación real del nivel gratuito de Groq
+(6000 tokens/minuto) que obligó a truncar el contexto por documento.
+
+---
+
 **Eliminación completa de la autenticación por API key — ✅ completada.** Tras la migración a
 Groq, el usuario detectó que Streamlit devolvía `401` al llamar a la API (`API_KEY` real
 configurada en el `.env` local, no vacía como se pensaba). Pidió simplificar la UX por
 completo: la API debe ser totalmente abierta (sin `X-API-Key` nunca) y Streamlit no debe
-pedir ni URL ni API key al usuario final. Ver "Último hito verificado" para el detalle.
+pedir ni URL ni API key al usuario final. Ver más abajo para el detalle.
 
 ---
 
@@ -57,6 +67,77 @@ de métrica de relevancia encontrado y corregido durante la verificación contra
 real). Todos los bloques A/B/C/D están cerrados y verificados, más esta corrección posterior.
 
 ## Último hito verificado
+
+**Documentación enriquecida en `/consult`: ficha técnica + prospecto + enlaces oficiales de
+CIMA.** Ver [DECISIONS.md](DECISIONS.md) para el detalle completo. Resumen ejecutivo:
+
+- **Contexto**: el usuario probó el chat RAG con naproxeno/ocrelizumab y encontró las
+  respuestas demasiado básicas frente a la ficha técnica y el prospecto reales de CIMA (pasó
+  enlaces de ejemplo). Pidió que la consulta buscara y aportara esa documentación.
+- **`CimaAPIClient.get_ficha_tecnica_html`** nuevo (`tipo_doc=1`, junto al ya existente
+  `get_prospecto_html`, `tipo_doc=2`) — comparten `_get_documento_segmentado_html`.
+  `CimaDataSourcePort` ampliado con el método nuevo.
+- **`DrugModel`**: `documento_html` renombrado a `prospecto_html` (siempre fue prospecto, no
+  ficha técnica) + columnas nuevas `ficha_tecnica_html`, `prospecto_url`,
+  `ficha_tecnica_url`. Migración `7862d9ea1d65` — `alter_column` para el renombrado (no
+  drop+add, que habría perdido el contenido ya cacheado; autogenerate de Alembic no detecta
+  renombrados por sí solo, hubo que corregir la migración generada a mano).
+- **`DrugService.fetch_and_index_drug`**: ahora pide también la ficha técnica y extrae las
+  URLs públicas (`ficha_tecnica_url`/`prospecto_url`) del campo `docs` que CIMA ya incluye en
+  el detalle del medicamento (sin llamada de red extra). El embedding de búsqueda sigue
+  basado solo en nombre/principios activos/prospecto — no se le añadió la ficha técnica, para
+  no invalidar el umbral `MAX_RELEVANT_COSINE_DISTANCE` ya calibrado.
+- **`RAGPharmAgent`**: el contexto por fármaco pasó a incluir ficha técnica + prospecto (antes
+  solo prospecto); `SYSTEM_PROMPT` actualizado para indicar al modelo que prefiera la ficha
+  técnica en preguntas clínicas/de dosis. `sources` pasó de `list[str]` (solo nombres) a una
+  lista de objetos `{nombre, ficha_tecnica_url, prospecto_url}` — cambio de contrato
+  reflejado en `ConsultationResponse`/`ConsultationSourceItem` (`drug_schemas.py`).
+  Streamlit renderiza esos enlaces como markdown clicable en el desplegable de fuentes.
+- **Bug real #1 (producción, no relacionado con "añadir ficha técnica")**: al re-indexar
+  naproxeno para probar, `prospecto_html`/`ficha_tecnica_html` seguían llegando vacíos pese a
+  que CIMA sí tenía el contenido (confirmado con `curl` directo). Causa: CIMA es inconsistente
+  — para algunos medicamentos (genéricos, documentos más antiguos) `docSegmentado/contenido/
+  {tipo}` devuelve el texto completo como cuerpo plano en vez de JSON con `secciones`, **con
+  el mismo `Content-Type: text/plain` declarado en ambos casos** (no se puede distinguir de
+  antemano por cabecera). El código original solo manejaba el caso JSON; ante
+  `JSONDecodeError` degradaba silenciosamente a `None`, perdiendo prospecto/ficha técnica
+  reales sin ningún aviso — muy probablemente la causa raíz original de "la información es
+  muy básica" reportada por el usuario, más allá de la ausencia de ficha técnica. Corregido en
+  `_get_documento_segmentado_html`: si el `.json()` falla, usa `response.text` como
+  contenido en vez de `None`. Verificado con nregistro real 68435 (Naproxeno Normon): antes
+  0 bytes, después 18992 (prospecto) + 29004 (ficha técnica).
+- **Bug real #2 (límite externo, no de nuestro código)**: con el contexto ya enriquecido,
+  `/consult` empezó a devolver `response: ""` para consultas con 3 fármacos de contexto. Causa:
+  Groq (nivel gratuito, `on_demand`) limita a **6000 tokens/minuto**; ficha técnica + prospecto
+  sin truncar pueden sumar 40-60k caracteres *por fármaco*, y con 3 fármacos (límite de
+  `search_drugs_semantic`) el prompt superaba streaming los 22.5k tokens en una prueba real
+  (confirmado con una petición directa a Groq: `413 rate_limit_exceeded`, "Requested 22538"
+  contra un límite de 6000). Corregido con `MAX_CHARS_PER_DOCUMENT = 2500` en
+  `pharmacy_agent.py`: cada ficha técnica/prospecto se trunca antes de entrar al prompt,
+  dejando el peor caso (3 fármacos) en ~3000-4000 tokens, con margen para la respuesta. Con
+  volumen alto de peticiones seguidas en la misma ventana de un minuto (como en esta sesión de
+  pruebas) el límite acumulado de Groq puede seguir alcanzándose puntualmente — no es un fallo
+  del código, se recupera solo pasado ese minuto; verificado explícitamente (una petición
+  vacía, reintentada ~30s después, devolvió respuesta completa).
+- **Verificación con datos y servicios reales** (no solo dobles de test): tras reconstruir el
+  contenedor Docker con cada corrección, se truncó y re-indexó la caché de naproxeno e
+  ibuprofeno contra CIMA real. `POST /consult` con `drug_name=Naproxeno` y una pregunta de
+  dosis devolvió dosis exactas por presentación citando la ficha técnica real, con `sources`
+  incluyendo los 3 enlaces `ficha_tecnica_url`/`prospecto_url` reales de CIMA. Lo mismo para
+  ibuprofeno (contraindicaciones exactas). Verificado también en Streamlit vía
+  `streamlit.testing.v1.AppTest` contra la API real: sin excepciones, `sources` con los
+  enlaces esperados.
+- **Backfill**: se truncó y re-ingestó por completo la caché de 12 fármacos originales
+  (`python -m scripts.ingest_drugs`) para que reflejen los campos nuevos — sin esto, las
+  entradas cacheadas antes de esta sesión seguirían sin ficha técnica hasta su próximo
+  refresco natural (respaldo de CIMA en vivo).
+- **Verificación de tests**: 131 tests (+13 nuevos: casos de `get_ficha_tecnica_html` y del
+  fallback texto-plano en `test_cima_client.py`, `TestFetchAndIndexDrug` en
+  `test_drug_service.py`, casos de contexto/truncado en `test_pharmacy_agent.py`, ajustes en
+  `test_consult_use_case.py`/`test_api_endpoints.py`/`conftest.py` para el nuevo formato de
+  `sources`), `ruff check .`/`ruff format --check .` limpios.
+
+---
 
 **API REST abierta para consumo local (eliminación completa de la autenticación por API
 key) + limpieza de UX en Streamlit.** Ver [DECISIONS.md](DECISIONS.md) para el detalle

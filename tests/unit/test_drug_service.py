@@ -62,6 +62,7 @@ class TestSearchDrugsSemanticLiveFallback:
             "pactivos": "paracetamol",
         }
         cima_client.get_prospecto_html.return_value = "prospecto"
+        cima_client.get_ficha_tecnica_html.return_value = "ficha tecnica"
 
         service = _make_service(
             cima_client=cima_client, ollama_client=ollama_client, drug_repo=drug_repo
@@ -112,6 +113,7 @@ class TestSearchDrugsSemanticLiveFallback:
             "nombre": "Paracetamol 1g",
         }
         cima_client.get_prospecto_html.return_value = None
+        cima_client.get_ficha_tecnica_html.return_value = None
 
         service = _make_service(
             cima_client=cima_client, ollama_client=ollama_client, drug_repo=drug_repo
@@ -140,6 +142,7 @@ class TestSearchDrugsSemanticLiveFallback:
             "nombre": f"Farmaco {nregistro}",
         }
         cima_client.get_prospecto_html.return_value = None
+        cima_client.get_ficha_tecnica_html.return_value = None
 
         service = _make_service(
             cima_client=cima_client, ollama_client=ollama_client, drug_repo=drug_repo
@@ -168,3 +171,107 @@ class TestSearchDrugsSemanticLiveFallback:
 
         assert result.source == "none"
         cima_client.get_medicamento_by_nregistro.assert_not_called()
+
+
+class TestFetchAndIndexDrug:
+    @pytest.mark.asyncio
+    async def test_builds_drug_data_with_ficha_tecnica_and_document_urls(self) -> None:
+        ollama_client = AsyncMock(spec=LanguageModelPort)
+        ollama_client.generate_embedding.return_value = [0.1, 0.2]
+        drug_repo = AsyncMock(spec=DrugRepositoryPort)
+        drug_repo.get_by_nregistro.return_value = None
+
+        cima_client = AsyncMock(spec=CimaDataSourcePort)
+        cima_client.get_medicamento_by_nregistro.return_value = {
+            "nregistro": "83348",
+            "nombre": "Naproxeno 600mg",
+            "pactivos": "NAPROXENO SODICO",
+            "labtitular": "Bayer",
+            "cpresc": "Sin Receta",
+            "docs": [
+                {
+                    "tipo": 1,
+                    "urlHtml": "https://cima.aemps.es/cima/dochtml/ft/83348/FT_83348.html",
+                },
+                {
+                    "tipo": 2,
+                    "urlHtml": "https://cima.aemps.es/cima/dochtml/p/83348/P_83348.html",
+                },
+            ],
+        }
+        cima_client.get_prospecto_html.return_value = "contenido del prospecto"
+        cima_client.get_ficha_tecnica_html.return_value = (
+            "contenido de la ficha técnica"
+        )
+
+        service = _make_service(
+            cima_client=cima_client, ollama_client=ollama_client, drug_repo=drug_repo
+        )
+
+        await service.fetch_and_index_drug("83348")
+
+        drug_data = drug_repo.save_drug.call_args.args[0]
+        assert drug_data["prospecto_html"] == "contenido del prospecto"
+        assert drug_data["ficha_tecnica_html"] == "contenido de la ficha técnica"
+        assert (
+            drug_data["ficha_tecnica_url"]
+            == "https://cima.aemps.es/cima/dochtml/ft/83348/FT_83348.html"
+        )
+        assert (
+            drug_data["prospecto_url"]
+            == "https://cima.aemps.es/cima/dochtml/p/83348/P_83348.html"
+        )
+
+    @pytest.mark.asyncio
+    async def test_embedding_text_excludes_ficha_tecnica(self) -> None:
+        """El embedding de búsqueda no debe incluir la ficha técnica — cambiar su
+        composición invalidaría el umbral `MAX_RELEVANT_COSINE_DISTANCE` ya calibrado
+        (ver drug_repository.py) frente a los embeddings ya existentes en caché."""
+        ollama_client = AsyncMock(spec=LanguageModelPort)
+        ollama_client.generate_embedding.return_value = [0.1]
+        drug_repo = AsyncMock(spec=DrugRepositoryPort)
+        drug_repo.get_by_nregistro.return_value = None
+
+        cima_client = AsyncMock(spec=CimaDataSourcePort)
+        cima_client.get_medicamento_by_nregistro.return_value = {
+            "nregistro": "83348",
+            "nombre": "Naproxeno 600mg",
+            "pactivos": "NAPROXENO SODICO",
+        }
+        cima_client.get_prospecto_html.return_value = "texto del prospecto"
+        cima_client.get_ficha_tecnica_html.return_value = "TEXTO_EXCLUSIVO_DE_LA_FICHA"
+
+        service = _make_service(
+            cima_client=cima_client, ollama_client=ollama_client, drug_repo=drug_repo
+        )
+
+        await service.fetch_and_index_drug("83348")
+
+        embedding_text = ollama_client.generate_embedding.call_args.args[0]
+        assert "texto del prospecto" in embedding_text
+        assert "TEXTO_EXCLUSIVO_DE_LA_FICHA" not in embedding_text
+
+    @pytest.mark.asyncio
+    async def test_missing_docs_field_yields_none_urls(self) -> None:
+        ollama_client = AsyncMock(spec=LanguageModelPort)
+        ollama_client.generate_embedding.return_value = [0.1]
+        drug_repo = AsyncMock(spec=DrugRepositoryPort)
+        drug_repo.get_by_nregistro.return_value = None
+
+        cima_client = AsyncMock(spec=CimaDataSourcePort)
+        cima_client.get_medicamento_by_nregistro.return_value = {
+            "nregistro": "111",
+            "nombre": "Farmaco sin docs",
+        }
+        cima_client.get_prospecto_html.return_value = None
+        cima_client.get_ficha_tecnica_html.return_value = None
+
+        service = _make_service(
+            cima_client=cima_client, ollama_client=ollama_client, drug_repo=drug_repo
+        )
+
+        await service.fetch_and_index_drug("111")
+
+        drug_data = drug_repo.save_drug.call_args.args[0]
+        assert drug_data["ficha_tecnica_url"] is None
+        assert drug_data["prospecto_url"] is None

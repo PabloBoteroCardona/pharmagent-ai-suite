@@ -2,7 +2,8 @@
 
 Encapsula el acceso de red a `settings.cima_base_url` — usado por `DrugService`
 (`src/application/services/`) para poblar la caché semántica local con el texto
-oficial de fichas técnicas y prospectos. Nunca propaga excepciones de red: ante
+oficial de fichas técnicas (`get_ficha_tecnica_html`) y prospectos
+(`get_prospecto_html`). Nunca propaga excepciones de red: ante
 un fallo de conexión, timeout, respuesta de error o cuerpo vacío (CIMA devuelve
 200 con cuerpo vacío para un nregistro/cn inexistente, en vez de un 404),
 devuelve una estructura vacía/`None` para que las capas superiores decidan
@@ -20,6 +21,7 @@ from src.infrastructure.config.settings import settings
 
 DEFAULT_TIMEOUT_SECONDS = 10.0
 
+FICHA_TECNICA_TIPO_DOC = 1
 PROSPECTO_TIPO_DOC = 2
 
 
@@ -73,17 +75,45 @@ class CimaAPIClient:
         """
         return await self._get_medicamento({"cn": cn})
 
+    async def get_ficha_tecnica_html(self, nregistro: str) -> str | None:
+        """Recupera y concatena el HTML de todas las secciones de la ficha técnica
+        oficial — información clínica para profesionales sanitarios (posología exacta,
+        farmacocinética, contraindicaciones, interacciones), más completa que el
+        prospecto para responder consultas clínicas."""
+        return await self._get_documento_segmentado_html(
+            nregistro, FICHA_TECNICA_TIPO_DOC
+        )
+
     async def get_prospecto_html(self, nregistro: str) -> str | None:
-        """Recupera y concatena el HTML de todas las secciones del prospecto oficial."""
+        """Recupera y concatena el HTML de todas las secciones del prospecto oficial
+        — información dirigida al paciente, en lenguaje divulgativo."""
+        return await self._get_documento_segmentado_html(nregistro, PROSPECTO_TIPO_DOC)
+
+    async def _get_documento_segmentado_html(
+        self, nregistro: str, tipo_doc: int
+    ) -> str | None:
         try:
             response = await self._client.get(
-                f"/docSegmentado/contenido/{PROSPECTO_TIPO_DOC}",
+                f"/docSegmentado/contenido/{tipo_doc}",
                 params={"nregistro": nregistro},
             )
             response.raise_for_status()
-            secciones = response.json().get("secciones", [])
-        except (httpx.HTTPError, json.JSONDecodeError):
+        except httpx.HTTPError:
             return None
+
+        try:
+            secciones = response.json().get("secciones", [])
+        except json.JSONDecodeError:
+            # CIMA es inconsistente: para algunos medicamentos (sobre todo genéricos o
+            # documentos más antiguos) este endpoint devuelve el texto completo
+            # directamente como cuerpo plano, no envuelto en `{"secciones": [...]}` —
+            # en ambos casos el `Content-Type` declarado es `text/plain`, así que no
+            # sirve para distinguir el caso de antemano (verificado empíricamente:
+            # nregistro=68435 devuelve texto plano, nregistro=83348 devuelve JSON, con
+            # idéntico Content-Type). Bug real encontrado en producción: antes de este
+            # `except`, cualquier medicamento con respuesta en texto plano perdía todo
+            # su prospecto/ficha técnica silenciosamente (degradaba a `None`).
+            return response.text or None
 
         html_fragments = [
             seccion["contenido"] for seccion in secciones if seccion.get("contenido")

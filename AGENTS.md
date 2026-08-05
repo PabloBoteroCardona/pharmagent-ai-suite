@@ -183,7 +183,11 @@ medicamentos (AEMPS/CIMA) mediante *Retrieval-Augmented Generation*.
   filtrado por un umbral de relevancia — ver nota sobre la métrica más abajo); si no hay
   resultados relevantes, busca en vivo en CIMA por nombre y los indexa.
 - Generar una respuesta **basada exclusivamente en los fragmentos recuperados** (nombre,
-  principios activos, prospecto) vía el `system_prompt` grounded de `GroqClient`.
+  principios activos, ficha técnica y prospecto — la ficha técnica se prioriza para
+  preguntas clínicas/de dosificación, más completa que el prospecto) vía el
+  `system_prompt` grounded de `GroqClient`. La respuesta incluye además enlaces directos
+  a la ficha técnica y al prospecto oficiales de CIMA de cada fármaco citado
+  (`ConsultationResponse.sources[].ficha_tecnica_url`/`.prospecto_url`).
 - Si ni la caché ni CIMA en vivo devuelven nada relevante, el `system_prompt` indica
   explícitamente la ausencia de contexto — la salida además expone `source: "cache"|"live"|"none"`
   para que el consumidor sepa la procedencia (ver "Entradas/salidas" abajo); sigue sin haber

@@ -1,8 +1,9 @@
 """Modelo ORM SQLAlchemy 2.0 para medicamentos, con soporte de embeddings via pgvector.
 
-Almacena la caché local (secundaria) de datos oficiales de CIMA/AEMPS y su
-embedding semántico, usado por el adaptador RAG para búsquedas vectoriales
-sobre `documento_html` cuando la consulta en vivo a CIMA no está disponible.
+Almacena la caché local (secundaria) de datos oficiales de CIMA/AEMPS — ficha técnica y
+prospecto (contenido y URL pública de cada uno) — y su embedding semántico, usado por el
+adaptador RAG para búsquedas vectoriales cuando la consulta en vivo a CIMA no está
+disponible.
 """
 
 from __future__ import annotations
@@ -27,7 +28,10 @@ class DrugModel(Base):
     pactivos: Mapped[str | None]
     labtitular: Mapped[str | None]
     cpres: Mapped[str | None]
-    documento_html: Mapped[str | None]
+    prospecto_html: Mapped[str | None]
+    ficha_tecnica_html: Mapped[str | None]
+    prospecto_url: Mapped[str | None]
+    ficha_tecnica_url: Mapped[str | None]
     embedding: Mapped[list[float] | None] = mapped_column(
         Vector(EMBEDDING_DIMENSIONS), nullable=True
     )
