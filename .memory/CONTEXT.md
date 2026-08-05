@@ -5,77 +5,64 @@
 PharmAgent AI Suite es un Trabajo de Fin de Máster (TFM) que implementa un sistema
 multiagente, construido en Clean Architecture sobre Python/FastAPI, para el procesamiento
 de recetas médicas, la verificación de interacciones farmacológicas y la consulta de fichas
-técnicas oficiales (AEMPS/CIMA). Combina tres agentes sobre Google ADK — `PrescriptionAgent`
-(Gemini 1.5 Pro multimodal), `SafetyCheckAgent` (Llama 3.1 local) y `RAGPharmAgent`
-(Gemma 2 local) — y persiste datos en PostgreSQL + `pgvector`. Ver [AGENTS.md](../AGENTS.md)
-y [SKILLS.md](../SKILLS.md) para el detalle de agentes y herramientas.
+técnicas oficiales (AEMPS/CIMA). Tres agentes — `PrescriptionAgent` (Gemini multimodal,
+modelo `gemini-flash-latest`), `SafetyCheckAgent` (base curada + razonamiento `llama3` local
+para combinaciones no cubiertas) y `RAGPharmAgent` (`llama3` local, RAG sobre caché
+`pgvector`) — implementados como clases Python `async` simples (no sobre Google ADK, ver
+nota de "Estado real" en [AGENTS.md](../AGENTS.md)), orquestables individualmente o
+encadenados vía `ProcessPrescriptionUseCase`. Persiste en PostgreSQL + `pgvector`
+(migraciones Alembic). API REST con autenticación opcional por API key y CORS. Ver
+[AGENTS.md](../AGENTS.md) y [SKILLS.md](../SKILLS.md) para el detalle de agentes y
+herramientas, y [EVALUATION.md](../EVALUATION.md) para su evaluación cuantitativa.
 
 ## Estado actual
 
-**[BLOQUE D] "Profesionalización" — EN CURSO, pasos 1-6 de 10 completados y verificados.**
-Tras cerrar [BLOQUE A]/[B]/[C], se pidió evaluar el proyecto con ojo crítico (puntos débiles
-señalados: `SafetyCheckAgent` sin LLM, `RAGPharmAgent` no consulta CIMA en vivo por petición,
-sin auth, sin CORS, sin persistencia real de `Prescription`, sin migraciones Alembic, sin
-evaluación cuantitativa, cobertura de tests superficial). El usuario pidió corregir "todo lo
-necesario para que quede un proyecto profesional"; se acordó (decisión propia, instrucción
-del usuario: proceder con criterio propio) implementar en este orden:
-
-1. ✅ CORS + autenticación por API key.
-2. ✅ Dockerfile de la API + servicio en `docker-compose.yml`.
-3. ✅ Orquestación end-to-end receta→extracción→interacciones (nuevo caso de uso + endpoint).
-4. ✅ `SafetyCheckAgent`: capa de razonamiento con Ollama para combinaciones fuera de la tabla curada.
-5. ✅ Persistencia real de recetas procesadas (modelo ORM + repositorio).
-6. ✅ Migraciones Alembic (sustituye `create_all`/`init_db.py`, eliminado).
-7. ⬜ Tests directos de `CimaAPIClient`/`OllamaClient`/`GeminiClient` (manejo de errores) — **siguiente paso**.
-8. ⬜ `pytest-cov` + umbral de cobertura en CI.
-9. ⬜ Dataset de evaluación sintético + script de métricas + `EVALUATION.md`.
-10. ⬜ Actualizar README/AGENTS/SKILLS y memoria con el estado final.
-
-**Resumen de los pasos 1-6 (todos verificados con `ruff check .`, `ruff format --check .` y
-`pytest` en verde; varios además contra servicios reales, no solo dobles — ver detalle):**
-
-- **1-2 (CORS + API key + Docker)**: `settings.api_key`/`cors_allowed_origins` nuevos;
-  [security.py](../src/infrastructure/api/security.py) (`verify_api_key`, dependencia a
-  nivel de router); `CORSMiddleware` en `main.py`.
-  [Dockerfile](../Dockerfile) (`python:3.12-slim`, usuario no-root) + servicio `api` en
-  [docker-compose.yml](../docker-compose.yml) — build y arranque del contenedor verificados
-  con Docker Desktop real (`/health` → 200 dentro del contenedor).
-- **3 (orquestación)**: [`ProcessPrescriptionUseCase`](../src/use_cases/process_prescription.py)
-  encadena `PrescriptionAgent` → `SafetyCheckAgent` (solo si se extraen 2+ fármacos);
-  `POST /api/v1/pharmacy/process-prescription`.
-- **4 (SafetyCheckAgent + LLM)**: diseño híbrido — la base curada sigue siendo la fuente
-  **autoritativa** (si aplica, nunca se consulta al LLM); para combinaciones no cubiertas, si
-  hay un `LanguageModelPort` inyectado (Ollama), se le consulta con un prompt restrictivo;
-  cada interacción lleva `source: "curated"|"llm"`. Ante JSON inválido o `uncertain: true`,
-  el veredicto por defecto es `requiere_revision_medica` (nunca aprobación silenciosa).
-  `check_interactions` es ahora `async`. **Verificado contra Ollama/llama3 real**:
-  metformina+furosemida (fuera de la tabla) generó una interacción plausible con
-  `source: "llm"`; warfarina+aspirina (en la tabla) no consultó al modelo.
-- **5 (persistencia)**: `PrescriptionRecordModel`
-  ([prescription_record_model.py](../src/infrastructure/models/prescription_record_model.py))
-  — registro auditable (JSON crudo de `drugs`/`advertencias`/`safety_check`), deliberadamente
-  NO mapeado a la entidad de dominio estricta `Prescription`/`PrescribedDrug` porque
-  `GeminiClient` devuelve texto libre no normalizado (`"cada 8 horas"`) y forzarlo a
-  `frequency_hours: int` introduciría conversión no verificada en datos de salud — decisión
-  documentada en el propio modelo. `PrescriptionRecordRepository` +
-  `PrescriptionRecordRepositoryPort`, inyectado opcionalmente en
-  `ProcessPrescriptionUseCase`. **Verificado con escritura y lectura reales en Postgres.**
-- **6 (Alembic)**: `alembic init -t async migrations`; `migrations/env.py` reconfigurado
-  para usar `settings.database_url` y `Base.metadata` (autogenerate real, no manual).
-  `src/infrastructure/init_db.py` **eliminado** (reemplazado por migraciones). Primera
-  migración `272aeb551e68` (tablas `drugs` + `prescription_records`), con un fix manual al
-  autogenerate (faltaba `import pgvector.sqlalchemy` y `CREATE EXTENSION IF NOT EXISTS
-  vector`). **Verificado con upgrade/downgrade/upgrade real contra Postgres**, y con el
-  contenedor Docker completo (`docker-compose up api` ejecuta `alembic upgrade head` antes
-  de arrancar Uvicorn). CI: nuevo job `migrations` en
-  [.github/workflows/ci.yml](../.github/workflows/ci.yml) que aplica y revierte la migración
-  contra un Postgres de servicio en GitHub Actions.
-
-**Nota**: tras dropear/recrear las tablas para generar la migración limpia, se re-ejecutó
-`python -m scripts.ingest_drugs` (12/12 fármacos re-indexados) — la caché de `drugs` está
-vacía hasta ese re-seed, ya hecho.
+**[BLOQUE D] "Profesionalización" — ✅ completado (10/10 pasos).** Tras cerrar
+[BLOQUE A]/[B]/[C], se evaluó el proyecto con ojo crítico (puntos débiles señalados:
+`SafetyCheckAgent` sin LLM, `RAGPharmAgent` no consulta CIMA en vivo por petición, sin auth,
+sin CORS, sin persistencia real de recetas, sin migraciones Alembic, sin evaluación
+cuantitativa, cobertura de tests superficial). El usuario pidió corregir "todo lo necesario
+para que quede un proyecto profesional"; se implementó con criterio propio (instrucción
+explícita del usuario) en 9 mejoras + cierre de documentación. Todos los bloques
+A/B/C/D están ahora cerrados y verificados.
 
 ## Último hito verificado
+
+**[BLOQUE D] — Profesionalización: auth, Docker, orquestación, `SafetyCheckAgent` híbrido,
+persistencia, Alembic, tests de clientes, cobertura, evaluación cuantitativa.** Ver
+[DECISIONS.md](DECISIONS.md) para el detalle completo de las 9 mejoras. Resumen ejecutivo:
+
+- **Auth + CORS**: `X-API-Key` opcional (`settings.api_key`, desactivada por defecto) a
+  nivel de router; `CORSMiddleware` (`settings.cors_allowed_origins`).
+- **Docker**: [Dockerfile](../Dockerfile) + servicio `api` en `docker-compose.yml`,
+  verificado con build/arranque reales (Docker Desktop) — `/health` → 200 en contenedor.
+- **Orquestación**: [`ProcessPrescriptionUseCase`](../src/use_cases/process_prescription.py)
+  (`POST /process-prescription`) — receta → extracción → interacciones automáticas si 2+
+  fármacos, con persistencia auditable.
+- **`SafetyCheckAgent` híbrido**: base curada autoritativa (nunca se consulta al LLM si
+  aplica) + razonamiento `llama3` local para combinaciones no cubiertas
+  (`source: "curated"|"llm"`). `check_interactions` ahora `async`. Verificado 7/7 correcto
+  en evaluación cuantitativa.
+- **Persistencia**: `PrescriptionRecordModel`/`Repository` — registro auditable JSON,
+  deliberadamente no mapeado a `Prescription`/`PrescribedDrug` (decisión documentada en el
+  propio modelo). Verificado con escritura/lectura reales en Postgres.
+- **Alembic**: `src/infrastructure/init_db.py` eliminado; migraciones versionadas
+  (`migrations/`), primera migración `272aeb551e68`. Bug real corregido en el autogenerate
+  (`import pgvector.sqlalchemy` + `CREATE EXTENSION` faltantes). Verificado con
+  upgrade/downgrade real + contenedor Docker + nuevo job de CI.
+- **Tests de clientes externos**: `test_cima_client.py`/`test_ollama_client.py`
+  (`httpx.MockTransport`) + `test_gemini_client.py` (mock del SDK).
+- **Cobertura**: `pytest-cov`, umbral 85% en CI (real: ~87%).
+- **Evaluación cuantitativa**: [evaluation/](../evaluation/) + [EVALUATION.md](../EVALUATION.md)
+  — 7/7 `SafetyCheckAgent` correctos, recall=1.0 `PrescriptionAgent`. **Bug de producción
+  real descubierto**: `gemini-1.5-pro` (desde BLOQUE B) fue retirado por Google —
+  corregido a `gemini-flash-latest`.
+- **Documentación**: `README.md`/`AGENTS.md`/`SKILLS.md` actualizados con el estado real de
+  todo lo anterior.
+- **Verificación global**: 99 tests (`pytest`) verdes, `ruff check .`/`ruff format --check .`
+  limpios, cobertura 87%, migraciones y Docker verificados contra servicios reales.
+
+---
 
 **[BLOQUE C] — Suite de tests, CI/CD y documentación final.** Ver
 [DECISIONS.md](DECISIONS.md) para el detalle completo. Resumen:
@@ -276,27 +263,26 @@ la escritura real en Postgres sigue bloqueada por el bug de `asyncpg`/Windows �
 
 ## Siguiente paso pendiente
 
-**[BLOQUE D] "Profesionalización", paso 7 de 10: tests directos de `CimaAPIClient`/
-`OllamaClient`/`GeminiClient`.** Pasos 1-6 completados y verificados (ver "Estado actual"
-arriba). Acción exacta al retomar:
+Sin un PASO/BLOQUE numerado asignado todavía — [BLOQUE A]/[B]/[C]/[D] están todos cerrados y
+verificados. Candidatos para un bloque futuro (no priorizados por el usuario):
 
-1. Crear `tests/unit/test_cima_client.py`, `test_ollama_client.py`, `test_gemini_client.py`
-   — cubrir el manejo de errores defensivo de cada cliente (que hoy solo se ejercita
-   indirectamente a través de los dobles en los tests de integración, nunca directamente):
-   `httpx.HTTPError`/`json.JSONDecodeError` capturados en `CimaAPIClient`/`OllamaClient`
-   (degradan a `[]`/`None`/`""`), y `APIError`/`JSONDecodeError`/`ValueError` en
-   `GeminiClient` (degrada a `{"drugs": [], "advertencias": []}`). Usar `httpx.MockTransport`
-   o mockear el cliente HTTP subyacente para simular timeouts, respuestas 5xx y cuerpos
-   vacíos/malformados sin depender de red real.
-2. Ejecutar `ruff check .`, `ruff format --check .`, `pytest`.
-3. Continuar con el resto de la lista de [BLOQUE D] en orden: `pytest-cov` + umbral de
-   cobertura en CI, dataset de evaluación sintético + script de métricas + `EVALUATION.md`,
-   y cierre con actualización de README/AGENTS/SKILLS/memoria (documentar todo lo añadido en
-   los pasos 1-9: auth, CORS, Docker, orquestación, SafetyCheckAgent híbrido, persistencia,
-   Alembic, tests de clientes, cobertura, evaluación).
-
-Candidatos de un bloque futuro posterior a [BLOQUE D] (no priorizados): desacoplar
-`DrugRepositoryPort` de `DrugModel` (ORM) con una entidad de dominio `Drug` pura; desplegar
-la API en un entorno remoto para la defensa del TFM; normalizar la extracción de
-`PrescriptionAgent` a la entidad de dominio `Prescription`/`PrescribedDrug` cuando el modelo
-devuelva campos estructurados en vez de texto libre.
+1. Desacoplar `DrugRepositoryPort` de `DrugModel` (ORM) con una entidad de dominio `Drug`
+   pura (limitación aceptada desde BLOQUE A).
+2. Normalizar la extracción de `PrescriptionAgent` a la entidad de dominio
+   `Prescription`/`PrescribedDrug` en vez del registro JSON auditable actual — requeriría que
+   `GeminiClient` devuelva campos estructurados (`frequency_hours: int`, no
+   `"cada 8 horas"`), ver nota en
+   [prescription_record_model.py](../src/infrastructure/models/prescription_record_model.py).
+3. Ampliar la base curada de `SafetyCheckAgent` más allá de 6 pares, o añadir el *fallback*
+   a Gemini remoto descrito en el diseño original de AGENTS.md cuando Ollama no esté
+   disponible.
+4. Distinguir explícitamente en `SafetyCheckAgent` entre "el LLM respondió que no hay
+   interacción" y "el LLM no respondió/timeout" — hoy ambos casos producen `interactions: []`
+   sin diferenciarse en la salida (limitación señalada en
+   [EVALUATION.md](../EVALUATION.md)).
+5. `RAGPharmAgent` con CIMA en vivo por petición además de la caché vectorial (hoy CIMA en
+   vivo es exclusivo de la ingesta por lotes).
+6. Desplegar la API en un entorno remoto para la defensa del TFM.
+7. Orquestar los 3 agentes (incluyendo `RAGPharmAgent`) en un único flujo de nivel superior,
+   más allá de `ProcessPrescriptionUseCase` (que solo compone `PrescriptionAgent` +
+   `SafetyCheckAgent`).

@@ -2,7 +2,7 @@
 
 Especificación de los tres agentes de PharmAgent AI Suite.
 
-**Estado real de la implementación** (actualizado tras [BLOQUE B]/[BLOQUE C], ver
+**Estado real de la implementación** (actualizado tras [BLOQUE B]/[BLOQUE C]/[BLOQUE D], ver
 [.memory/DECISIONS.md](.memory/DECISIONS.md)): los agentes **no** se implementan sobre el
 Google Agent Development Kit (`LlmAgent`, tool-calling declarativo) — se implementan como
 clases Python asíncronas simples en `src/application/agents/`, orquestando directamente los
@@ -30,12 +30,12 @@ escaneo o PDF) mediante comprensión multimodal.
 
 | Campo | Valor |
 |---|---|
-| **Modelo** | `gemini-1.5-pro` (multimodal, vía `google-genai`) — implementado ✅ |
+| **Modelo** | `gemini-flash-latest` (multimodal, vía `google-genai`) — implementado ✅. Originalmente `gemini-1.5-pro` (BLOQUE B); **Google retiró ese modelo** (devuelve `404 NOT_FOUND` para claves nuevas) — descubierto y corregido durante la evaluación cuantitativa de [BLOQUE D], ver [EVALUATION.md](EVALUATION.md) |
 | **Tipo de invocación** | Llamada directa a `client.aio.models.generate_content()` con `Part.from_bytes` (imagen) + prompt de sistema; `response_mime_type="application/json"` fuerza salida estructurada. Sin capa ADK/tool-calling. |
 | **Ubicación real** | [`src/application/agents/prescription_agent.py`](src/application/agents/prescription_agent.py) (orquestador) + [`src/infrastructure/external/gemini_client.py`](src/infrastructure/external/gemini_client.py) (`GeminiClient`, cliente concreto) |
 | **Puerto de dominio** | [`PrescriptionVisionPort`](src/domain/ports/drug_ports.py) (`typing.Protocol`) — `GeminiClient` lo satisface estructuralmente |
-| **Endpoint REST** | `POST /api/v1/pharmacy/analyze-prescription` (`UploadFile`) en `pharmacy_router.py` |
-| **Modo de ejecución** | Remoto (API de Google), latencia tolerable para flujo síncrono de subida de receta |
+| **Endpoints REST** | `POST /api/v1/pharmacy/analyze-prescription` (`UploadFile`, solo extracción) y `POST /api/v1/pharmacy/process-prescription` (extracción + verificación automática de interacciones vía `ProcessPrescriptionUseCase`, ver sección 2) |
+| **Modo de ejecución** | Remoto (API de Google), latencia tolerable para flujo síncrono de subida de receta — medida en [EVALUATION.md](EVALUATION.md) (~4-6s por imagen) |
 
 ### Responsabilidades
 - Recibir la imagen de la receta (bytes o URI) y el contexto del paciente (opcional).
@@ -83,35 +83,52 @@ seguridad a partir de la lista de fármacos ya extraída.
 
 | Campo | Valor |
 |---|---|
-| **Modelo** | Ninguno — regla determinista sobre una base de interacciones curada en memoria (**no LLM** en la implementación actual; el diseño objetivo de `llama-3.1` local con *fallback* a Gemini queda como trabajo futuro, ver limitación aceptada en [.memory/DECISIONS.md](.memory/DECISIONS.md)) |
-| **Tipo de invocación** | Método Python síncrono puro (`check_interactions`), sin llamada a red ni a ningún modelo |
+| **Modelo** | **Diseño híbrido** (añadido en [BLOQUE D]): base curada en memoria (determinista, autoritativa) + `llama3` local vía Ollama como razonamiento complementario para combinaciones no cubiertas por la base. Ya no es "ningún LLM" como en [BLOQUE C] — se acerca al diseño objetivo de esta sección (`llama-3.1` local), aunque sin el *fallback* a Gemini descrito originalmente (no implementado; ver limitación aceptada abajo) |
+| **Tipo de invocación** | Método Python asíncrono (`check_interactions`, `async def` desde BLOQUE D). Consulta la base curada primero (sin red); solo si no hay coincidencia y hay un `LanguageModelPort` inyectado, llama a `OllamaClient.generate_completion` con un prompt restrictivo |
 | **Ubicación real** | [`src/application/agents/safety_agent.py`](src/application/agents/safety_agent.py) |
-| **Puerto de dominio** | Ninguno — no depende de infraestructura externa; usa directamente la entidad de dominio `DrugInteraction` ([drug_interaction.py](src/domain/models/drug_interaction.py)) |
-| **Endpoint REST** | `POST /api/v1/pharmacy/check-interactions` en `pharmacy_router.py` |
-| **Modo de ejecución** | 100% local, sin dependencia de red externa (cumple el objetivo de privacidad del diseño original, aunque por ausencia de LLM y no por *fallback* controlado) |
+| **Puerto de dominio** | `LanguageModelPort` (opcional, inyectado — `None` desactiva el razonamiento LLM y el agente degrada al comportamiento de BLOQUE C) — usa además directamente la entidad de dominio `DrugInteraction` ([drug_interaction.py](src/domain/models/drug_interaction.py)) |
+| **Endpoints REST** | `POST /api/v1/pharmacy/check-interactions` (standalone) y `POST /api/v1/pharmacy/process-prescription` (encadenado tras `PrescriptionAgent`, ver `ProcessPrescriptionUseCase` más abajo) en `pharmacy_router.py` |
+| **Modo de ejecución** | 100% local, sin dependencia de red externa (Ollama local) — cumple el objetivo de privacidad del diseño original |
 
 ### Responsabilidades
 - Recibir una lista de nombres de fármacos (texto libre, p. ej. salida de `PrescriptionAgent`
   o introducidos manualmente) y normalizarlos (minúsculas, recorte de espacios) para
   comparación por subcadena contra la base curada.
-- Evaluar cada par conocido de la base curada (`_KNOWN_INTERACTIONS`, 6 interacciones
-  clínicamente documentadas) y devolver las que apliquen, con severidad
-  (`LOW`/`MEDIUM`/`HIGH`/`SEVERE`, `InteractionSeverity` de dominio) y recomendación clínica.
+- **Paso 1 — base curada (autoritativa)**: evaluar cada par conocido de
+  `_KNOWN_INTERACTIONS` (6 interacciones clínicamente documentadas) y, si alguna aplica,
+  devolverla tal cual (`source: "curated"`) — **nunca** se consulta al LLM en este caso,
+  para no arriesgar que un modelo contradiga una interacción ya verificada.
+- **Paso 2 — razonamiento LLM (complementario)**: si ningún par de la base curada aplica y
+  hay un `LanguageModelPort` inyectado, consulta a `llama3` con un prompt que exige JSON
+  estructurado y un campo `uncertain: bool` explícito. Las interacciones que devuelva se
+  marcan `source: "llm"`.
 - Emitir una recomendación explícita: `apto`, `apto_con_precaucion` o `requiere_revision_medica`.
-- **Nunca** aprobar silenciosamente una combinación con interacción `HIGH`/`SEVERE` — el
-  veredicto en ese caso es siempre `requiere_revision_medica`.
+- **Nunca** aprobar silenciosamente una combinación con interacción `HIGH`/`SEVERE` (de
+  cualquier fuente) — el veredicto en ese caso es siempre `requiere_revision_medica`. Ante
+  JSON del LLM inválido, vacío, o `uncertain: true`, el veredicto por defecto es también
+  `requiere_revision_medica` — nunca `apto` ante incertidumbre.
 
-**Limitación aceptada**: la base curada es mínima y demostrativa (fines de TFM), no una base
-de datos de interacciones clínica completa — no existe un endpoint de interacciones en
-CIMA/AEMPS que sustituirla directamente. Ampliarla, o sustituirla por un LLM local con
-conocimiento farmacológico (diseño original de esta sección), queda fuera de alcance de los
-bloques ejecutados hasta ahora.
+**Verificación cuantitativa**: 7/7 veredictos correctos sobre un dataset sintético de 3 casos
+de la base curada + 4 casos de razonamiento LLM (interacciones farmacológicas públicas
+elegidas para no solapar con la base curada) — ver [EVALUATION.md](EVALUATION.md) para
+metodología, latencias y un hallazgo relevante: un timeout de Ollama en una ejecución
+produjo un "acierto" por coincidencia con el veredicto por defecto, no por razonamiento
+real — documentado explícitamente para no sobre-representar la fiabilidad del camino LLM.
+
+**Limitación aceptada**: la base curada es mínima y demostrativa (fines de TFM, 6 pares), no
+una base de datos de interacciones clínica completa. El razonamiento LLM complementario no
+está *grounded* en ninguna base de datos verificada — es conocimiento paramétrico del
+modelo, con las mismas limitaciones de fiabilidad que cualquier LLM sin RAG. El *fallback* a
+Gemini remoto descrito en el diseño original no está implementado (Ollama es la única fuente
+de razonamiento; si no está disponible, el agente cae al comportamiento solo-curada).
 
 ### Principio rector (equivalente al prompt de sistema del diseño original)
 > Prioridad absoluta: la seguridad del paciente sobre la conveniencia. Ante cualquier
-> interacción `HIGH`/`SEVERE` conocida, el veredicto nunca es `apto` — es siempre
-> `requiere_revision_medica`. El agente solo reporta interacciones presentes en la base
-> curada; no infiere ni extrapola interacciones no documentadas en ella.
+> interacción `HIGH`/`SEVERE` conocida (curada o razonada por el LLM), el veredicto nunca es
+> `apto` — es siempre `requiere_revision_medica`. Ante incertidumbre del modelo o fallo de
+> parseo, el mismo principio aplica por defecto. Ver `LLM_SYSTEM_PROMPT` en
+> [safety_agent.py](src/application/agents/safety_agent.py) para el texto exacto usado en
+> el camino de razonamiento.
 
 ### Entradas / salidas
 - **Entrada real**: `drugs: list[str]` (mínimo 2, ver `InteractionCheckRequest` en
@@ -119,15 +136,22 @@ bloques ejecutados hasta ahora.
   `patient_context` (edad, alergias, medicación crónica, embarazo/lactancia) **no está
   implementado**.
 - **Salida real**: `{"interactions": [{"primary_drug", "secondary_drug", "severity",
-  "description", "clinical_recommendation"}], "verdict"}` (`InteractionCheckResponse`) — no
-  hay todavía caso de uso explícito en `src/use_cases/` para este flujo (el router llama al
-  agente directamente), a diferencia de `ConsultDrugRAGUseCase` para `RAGPharmAgent`.
+  "description", "clinical_recommendation", "source"}], "verdict"}`
+  (`InteractionCheckResponse`) — `source` (`"curated"`/`"llm"`) es una adición de BLOQUE D
+  sin equivalente directo en el `DrugInteractionReport` objetivo de SKILLS.md.
+- Consumido directamente por el router (`/check-interactions`) o por
+  [`ProcessPrescriptionUseCase`](src/use_cases/process_prescription.py) (`/process-prescription`,
+  BLOQUE D) — este último es el caso de uso explícito que orquesta `PrescriptionAgent` →
+  `SafetyCheckAgent` en un único flujo, con persistencia auditable (ver
+  [prescription_record_model.py](src/infrastructure/models/prescription_record_model.py)).
 
 ### Consideraciones de seguridad y cumplimiento
-- Al ejecutarse 100% en memoria local, no hay salida de datos clínicos hacia terceros.
-- **Pendiente**: no hay persistencia auditable del veredicto todavía (cada llamada es
-  *stateless*); el diseño objetivo de trazabilidad clínica persistida queda para un bloque
-  futuro.
+- Al ejecutarse 100% en memoria/Ollama local, no hay salida de datos clínicos hacia terceros
+  (a diferencia de un *fallback* a Gemini, no implementado).
+- **Implementado en BLOQUE D**: `ProcessPrescriptionUseCase` persiste el veredicto y las
+  interacciones detectadas en la tabla `prescription_records` (registro auditable) cuando se
+  usa el flujo `/process-prescription`. El endpoint standalone `/check-interactions` sigue
+  siendo *stateless*.
 
 ---
 
@@ -198,12 +222,15 @@ alcance de los bloques ejecutados hasta ahora.
 ## Convenciones comunes a los tres agentes
 
 - **Orquestación real**: cada agente se invoca directamente desde su propio endpoint REST en
-  `pharmacy_router.py`, vía la cadena de dependencias FastAPI (`Depends`). Solo
-  `RAGPharmAgent` pasa por un caso de uso explícito en `src/use_cases/`
-  (`ConsultDrugRAGUseCase`); `PrescriptionAgent` y `SafetyCheckAgent` son invocados
-  directamente por el router. No existe todavía un agente orquestador de nivel superior que
-  los componga entre sí (p. ej. receta → extracción → verificación de interacciones en un
-  único flujo) — es trabajo futuro.
+  `pharmacy_router.py`, vía la cadena de dependencias FastAPI (`Depends`).
+  `RAGPharmAgent` pasa por un caso de uso explícito (`ConsultDrugRAGUseCase`); desde
+  [BLOQUE D], `PrescriptionAgent` y `SafetyCheckAgent` también se componen en un único flujo
+  a través de [`ProcessPrescriptionUseCase`](src/use_cases/process_prescription.py)
+  (`POST /process-prescription`: receta → extracción → verificación automática de
+  interacciones si hay 2+ fármacos, con persistencia auditable). Ambos agentes siguen
+  siendo invocables por separado (`/analyze-prescription`, `/check-interactions`) para casos
+  de uso más simples. No existe todavía un agente orquestador de nivel superior que
+  incluya también a `RAGPharmAgent` en el mismo flujo.
 - **Contratos reales**: toda entrada/salida pasa por los esquemas Pydantic v2 de
   [drug_schemas.py](src/infrastructure/api/schemas/drug_schemas.py) (contrato REST real,
   más simple que los esquemas de *tool* de [SKILLS.md](SKILLS.md), que documentan el diseño
@@ -211,8 +238,19 @@ alcance de los bloques ejecutados hasta ahora.
 - **Observabilidad real**: Sentry está cableado a nivel de aplicación
   ([main.py](src/infrastructure/api/main.py), BLOQUE B) — captura errores no controlados de
   cualquier endpoint. **Pendiente**: no hay todavía trazas por invocación de agente
-  individual (latencia, modelo usado, éxito/fallback) como describía el diseño original.
-- **Configuración real**: nombres de modelo (`gemini-1.5-pro`, `llama3`,
+  individual (latencia, modelo usado, éxito/fallback) como describía el diseño original —
+  aunque sí existe una medición de latencia puntual (no continua) en
+  [EVALUATION.md](EVALUATION.md).
+- **Configuración real**: nombres de modelo (`gemini-flash-latest`, `llama3`,
   `nomic-embed-text`) y endpoints (`OLLAMA_BASE_URL`, `CIMA_BASE_URL`, `GOOGLE_API_KEY`) se
   leen de `src/infrastructure/config/settings.py` (`pydantic-settings`, BLOQUE A) — ya
-  implementado, no pendiente.
+  implementado, no pendiente. Desde BLOQUE D también centraliza `API_KEY`
+  (autenticación REST) y `CORS_ALLOWED_ORIGINS`.
+- **Persistencia y migraciones (BLOQUE D)**: el esquema de base de datos se gestiona con
+  Alembic ([migrations/](migrations/)), no con `Base.metadata.create_all` — ver
+  [README.md](README.md#migraciones-de-base-de-datos). `PrescriptionRecordModel` persiste el
+  resultado de `ProcessPrescriptionUseCase` como registro auditable.
+- **Autenticación y CORS (BLOQUE D)**: los endpoints de `pharmacy_router.py` exigen la
+  cabecera `X-API-Key` si `settings.api_key` está configurada (`src/infrastructure/api/security.py`);
+  CORS se controla vía `settings.cors_allowed_origins`. Ambos desactivados por defecto en
+  desarrollo local/CI.

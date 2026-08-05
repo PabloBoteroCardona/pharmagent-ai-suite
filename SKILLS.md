@@ -106,20 +106,28 @@ class PrescriptionExtractionResult(BaseModel):
     )
 ```
 
-**Umbral de revisión manual**: `PRESCRIPTION_MIN_CONFIDENCE` (`.env`), aplicado en
-`src/use_cases/process_prescription.py`, no dentro de la tool.
+**Umbral de revisión manual**: `PRESCRIPTION_MIN_CONFIDENCE` (`.env`) es diseño objetivo, no
+implementado (ver "Estado real" abajo) — el nombre de archivo `process_prescription.py` que
+sugiere este apartado del diseño original coincide por casualidad con
+[`src/use_cases/process_prescription.py`](src/use_cases/process_prescription.py), creado en
+BLOQUE D con un propósito distinto (orquestar `PrescriptionAgent` → `SafetyCheckAgent`, sin
+ningún umbral de confianza): ver la nota de "Estado real" de esta tool.
 
 **Estado real**: implementado en
 [`GeminiClient.analyze_prescription_image`](src/infrastructure/external/gemini_client.py)
-con un contrato más simple: entrada `image_bytes: bytes` + `mime_type: str`; salida
-`{"drugs": [{"farmaco", "dosificacion", "frecuencia", "duracion"}], "advertencias": [str]}`
-(`PrescriptionAnalysisResponse` en
+(modelo `gemini-flash-latest` — `gemini-1.5-pro`, usado originalmente, fue retirado por
+Google; ver [EVALUATION.md](EVALUATION.md)) con un contrato más simple: entrada
+`image_bytes: bytes` + `mime_type: str`; salida `{"drugs": [{"farmaco", "dosificacion",
+"frecuencia", "duracion"}], "advertencias": [str]}` (`PrescriptionAnalysisResponse` en
 [drug_schemas.py](src/infrastructure/api/schemas/drug_schemas.py)). No hay `confidence_score`
 por campo, `requires_manual_review`, `prescriber_name`/`patient_name`/`issue_date`, ni el
 umbral `PRESCRIPTION_MIN_CONFIDENCE` — todo eso es diseño objetivo, no implementado. El
 guardrail de "nunca inventar datos ilegibles" sí se aplica, vía instrucción explícita en el
 prompt de sistema de `GeminiClient` (verificado con una imagen real sin contenido de receta:
-Gemini devolvió `drugs: []` en vez de alucinar un fármaco).
+Gemini devolvió `drugs: []` en vez de alucinar un fármaco; y con recall=1.0 sobre 3 imágenes
+sintéticas en [EVALUATION.md](EVALUATION.md)). Desde BLOQUE D, esta tool se puede encadenar
+automáticamente con `check_drug_interactions` vía `POST /process-prescription`
+(`ProcessPrescriptionUseCase`) — ver sección 2 y [AGENTS.md](AGENTS.md#1-prescriptionagent).
 
 ---
 
@@ -212,18 +220,27 @@ o si `patient_context` es `None` y hay medicación crónica desconocida, el `ver
 `FIT` (validado en `src/domain/services/drug_safety_service.py`, no confiado únicamente al LLM).
 
 **Estado real**: implementado en
-[`SafetyCheckAgent.check_interactions`](src/application/agents/safety_agent.py) con un
-contrato más simple: entrada `drugs: list[str]` (mínimo 2, sin `patient_context`); salida
-`{"interactions": [{"primary_drug", "secondary_drug", "severity", "description",
-"clinical_recommendation"}], "verdict"}` (`InteractionCheckResponse`). `severity` usa el enum
-de dominio `InteractionSeverity` (`LOW`/`MEDIUM`/`HIGH`/`SEVERE`), no el `Severity` en
-español de este documento (`leve`/`moderada`/`grave`/`contraindicada`); `verdict` sí conserva
-los mismos tres valores (`apto`/`apto_con_precaucion`/`requiere_revision_medica`). La regla de
-negocio de este apartado se cumple: `HIGH`/`SEVERE` fuerza siempre
-`requiere_revision_medica`, nunca `apto`. **No hay LLM involucrado** — es una búsqueda
-determinista contra una base curada de 6 interacciones en memoria (ver limitación aceptada en
-[.memory/DECISIONS.md](.memory/DECISIONS.md)), no la tool invocada por un `SafetyCheckAgent`
-basado en `llama-3.1` que describe el diseño objetivo.
+[`SafetyCheckAgent.check_interactions`](src/application/agents/safety_agent.py) (`async def`
+desde BLOQUE D) con un contrato más simple: entrada `drugs: list[str]` (mínimo 2, sin
+`patient_context`); salida `{"interactions": [{"primary_drug", "secondary_drug", "severity",
+"description", "clinical_recommendation", "source"}], "verdict"}`
+(`InteractionCheckResponse`). `severity` usa el enum de dominio `InteractionSeverity`
+(`LOW`/`MEDIUM`/`HIGH`/`SEVERE`), no el `Severity` en español de este documento
+(`leve`/`moderada`/`grave`/`contraindicada`); `verdict` sí conserva los mismos tres valores
+(`apto`/`apto_con_precaucion`/`requiere_revision_medica`). La regla de negocio de este
+apartado se cumple: `HIGH`/`SEVERE` fuerza siempre `requiere_revision_medica`, nunca `apto`,
+sea cual sea la fuente.
+
+**Diseño híbrido (BLOQUE D)**: ya no es "sin LLM" — es una búsqueda determinista contra una
+base curada de 6 interacciones en memoria (autoritativa, `source: "curated"`), y **solo si
+ninguna coincide**, un razonamiento complementario vía `llama3` local (`source: "llm"`),
+acercándose al diseño objetivo de un `SafetyCheckAgent` basado en `llama-3.1` — sin el
+*fallback* a Gemini remoto descrito originalmente (no implementado, ver limitación aceptada
+en [.memory/DECISIONS.md](.memory/DECISIONS.md)). Verificado con 7/7 veredictos correctos
+sobre un dataset de evaluación sintético (3 casos de base curada + 4 de razonamiento LLM) —
+ver [EVALUATION.md](EVALUATION.md) para metodología completa, latencias reales, y un
+hallazgo relevante sobre un timeout de Ollama que produjo un acierto por coincidencia (no
+por razonamiento genuino) en una ejecución previa.
 
 ---
 
@@ -399,9 +416,15 @@ Tabla de diseño objetivo (ADK), no implementada — `src/adapters/adk/` fue eli
 
 | Tool (diseño objetivo) | Implementación real | Puerto de dominio real | Endpoint REST |
 |---|---|---|---|
-| `extract_prescription_from_image` | [`GeminiClient`](src/infrastructure/external/gemini_client.py) + [`PrescriptionAgent`](src/application/agents/prescription_agent.py) | `PrescriptionVisionPort` ([drug_ports.py](src/domain/ports/drug_ports.py)) | `POST /api/v1/pharmacy/analyze-prescription` |
-| `check_drug_interactions` | [`SafetyCheckAgent`](src/application/agents/safety_agent.py) | — (ninguno; solo domain model `DrugInteraction`) | `POST /api/v1/pharmacy/check-interactions` |
+| `extract_prescription_from_image` | [`GeminiClient`](src/infrastructure/external/gemini_client.py) + [`PrescriptionAgent`](src/application/agents/prescription_agent.py) | `PrescriptionVisionPort` ([drug_ports.py](src/domain/ports/drug_ports.py)) | `POST /api/v1/pharmacy/analyze-prescription` (solo extracción) / `POST /api/v1/pharmacy/process-prescription` (encadenado con `check_drug_interactions`) |
+| `check_drug_interactions` | [`SafetyCheckAgent`](src/application/agents/safety_agent.py) | `LanguageModelPort` opcional (razonamiento para combinaciones no cubiertas por la base curada) + domain model `DrugInteraction` | `POST /api/v1/pharmacy/check-interactions` / `POST /api/v1/pharmacy/process-prescription` |
 | `search_cima_official_data` | [`DrugService`](src/application/services/drug_service.py) + [`RAGPharmAgent`](src/application/agents/pharmacy_agent.py) | `CimaDataSourcePort` + `LanguageModelPort` + `DrugRepositoryPort` ([drug_ports.py](src/domain/ports/drug_ports.py)) | `POST /api/v1/pharmacy/consult` (cache-only) / ingesta batch para CIMA en vivo |
+
+`PrescriptionRecordRepositoryPort` ([drug_ports.py](src/domain/ports/drug_ports.py)),
+añadido en BLOQUE D, no corresponde a ninguna *tool* de este documento — es infraestructura
+de persistencia auditable para `POST /process-prescription`
+([`ProcessPrescriptionUseCase`](src/use_cases/process_prescription.py)), fuera del alcance
+conceptual original de SKILLS.md.
 
 Los modelos de este documento (`DrugInteractionReport` y esquemas afines) son el diseño
 conceptual de las *tools*; el contrato REST real y más simple efectivamente implementado vive

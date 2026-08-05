@@ -148,9 +148,47 @@ Detalle completo y verificación en [DECISIONS.md](DECISIONS.md).
   decisión explícita, ver DECISIONS.md).
 - Verificado: `pytest` (38 passed), `ruff check .` y `ruff format --check .` limpios.
 
+## [BLOQUE D] Profesionalización — ✅ completado
+
+Tras una evaluación crítica del proyecto, se implementaron 9 mejoras concretas. Detalle
+completo y verificación en [DECISIONS.md](DECISIONS.md).
+
+- **Auth + CORS**: `X-API-Key` opcional (`settings.api_key`) a nivel de router;
+  `CORSMiddleware` (`settings.cors_allowed_origins`).
+- **Docker**: [Dockerfile](../Dockerfile) + servicio `api` en
+  [docker-compose.yml](../docker-compose.yml), verificado con build y arranque reales.
+- **Orquestación end-to-end**: [`ProcessPrescriptionUseCase`](../src/use_cases/process_prescription.py)
+  (`POST /process-prescription`) — receta → extracción → verificación automática de
+  interacciones si hay 2+ fármacos.
+- **`SafetyCheckAgent` híbrido**: base curada autoritativa + razonamiento `llama3` local
+  para combinaciones no cubiertas (`source: "curated"|"llm"`); `check_interactions` ahora
+  `async`.
+- **Persistencia auditable**: `PrescriptionRecordModel`/`PrescriptionRecordRepository` —
+  registro JSON del resultado de `ProcessPrescriptionUseCase`, deliberadamente no mapeado a
+  `Prescription`/`PrescribedDrug` (ver nota de diseño en el propio modelo).
+- **Alembic**: `src/infrastructure/init_db.py` eliminado; esquema gestionado por
+  migraciones versionadas (`migrations/`), verificado con upgrade/downgrade real y con el
+  contenedor Docker. Nuevo job de CI que aplica/revierte migraciones contra Postgres real.
+- **Tests de clientes externos**: `test_cima_client.py`, `test_ollama_client.py`
+  (`httpx.MockTransport`), `test_gemini_client.py` (mock del SDK) — manejo de errores antes
+  no cubierto directamente.
+- **Cobertura**: `pytest-cov`, `.coveragerc`, umbral 85% en CI (real: ~87%).
+- **Evaluación cuantitativa**: [evaluation/](../evaluation/) + [EVALUATION.md](../EVALUATION.md)
+  — dataset sintético, 7/7 `SafetyCheckAgent` correctos, recall=1.0 `PrescriptionAgent`.
+  **Bug de producción real descubierto y corregido**: `gemini-1.5-pro` (usado desde
+  BLOQUE B) fue retirado por Google — sustituido por `gemini-flash-latest`.
+- Documentación (`README.md`, `AGENTS.md`, `SKILLS.md`) actualizada para reflejar todo lo
+  anterior, con las mismas notas de "Estado real" vs. diseño objetivo que en bloques previos.
+- Verificado: 99 tests (`pytest`) verdes, `ruff check .`/`ruff format --check .` limpios,
+  cobertura 87%, evaluación cuantitativa con resultados reales, Docker end-to-end.
+
 ## Fases futuras
 
 Sin detallar todavía — pendientes de definición (despliegue en un entorno remoto, entidad de
-dominio `Drug` desacoplada del ORM, ampliación de la base de interacciones de
-`SafetyCheckAgent`, `RAGPharmAgent` con CIMA en vivo por petición además de la caché,
-orquestación de los 3 agentes vía Google ADK real).
+dominio `Drug` desacoplada del ORM, ampliación de la base curada de interacciones de
+`SafetyCheckAgent` más allá de 6 pares, *fallback* a Gemini remoto para `SafetyCheckAgent`
+cuando Ollama no esté disponible, `RAGPharmAgent` con CIMA en vivo por petición además de la
+caché, normalización de `PrescriptionAgent` a la entidad de dominio `Prescription` pura,
+orquestación de los 3 agentes vía Google ADK real, distinguir explícitamente en
+`SafetyCheckAgent` entre "el LLM no encontró interacciones" y "el LLM no respondió/timeout"
+— ver limitación señalada en EVALUATION.md).

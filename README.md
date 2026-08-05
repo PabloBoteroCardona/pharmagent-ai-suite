@@ -10,8 +10,12 @@ de fichas técnicas oficiales de medicamentos autorizados en España (AEMPS/CIMA
 - [Stack tecnológico y arquitectura](#stack-tecnológico-y-arquitectura)
 - [Requisitos previos](#requisitos-previos)
 - [Instrucciones de despliegue en local](#instrucciones-de-despliegue-en-local)
+- [Despliegue con Docker Compose](#despliegue-con-docker-compose)
 - [Endpoints de la API](#endpoints-de-la-api)
-- [Pruebas automatizadas](#pruebas-automatizadas)
+- [Autenticación y CORS](#autenticación-y-cors)
+- [Pruebas automatizadas y cobertura](#pruebas-automatizadas-y-cobertura)
+- [Evaluación cuantitativa](#evaluación-cuantitativa)
+- [Migraciones de base de datos](#migraciones-de-base-de-datos)
 - [Estado del proyecto](#estado-del-proyecto)
 
 ## Descripción y objetivos
@@ -21,13 +25,19 @@ disciplina de Clean Architecture, puede apoyar tres tareas farmacéuticas concre
 comprometer la seguridad del paciente ni la privacidad de los datos de salud que maneja:
 
 1. **Extracción estructurada de recetas** a partir de una imagen (foto o escaneo), usando
-   comprensión multimodal (`PrescriptionAgent`, Gemini 1.5 Pro).
-2. **Verificación de interacciones farmacológicas** conocidas entre los fármacos de una
-   receta (`SafetyCheckAgent`), con un veredicto explícito y nunca una aprobación silenciosa
-   ante una interacción grave.
+   comprensión multimodal (`PrescriptionAgent`, Gemini).
+2. **Verificación de interacciones farmacológicas** entre los fármacos de una receta
+   (`SafetyCheckAgent`): una base curada de interacciones documentadas actúa como fuente
+   autoritativa, y para combinaciones no cubiertas por esa base se consulta opcionalmente a
+   un modelo de lenguaje local (Ollama/`llama3`) — con un veredicto explícito y nunca una
+   aprobación silenciosa ante una interacción grave o ante incertidumbre del modelo.
 3. **Consulta en lenguaje natural** sobre fichas técnicas oficiales de medicamentos
    (`RAGPharmAgent`), con respuestas *grounded* — basadas únicamente en la información
    recuperada, nunca en conocimiento no verificado del modelo.
+
+Un cuarto flujo, `ProcessPrescriptionUseCase`, orquesta los dos primeros de extremo a
+extremo: sube una imagen de receta → extrae los fármacos → si hay 2 o más, verifica
+automáticamente sus interacciones — y persiste el resultado como registro auditable.
 
 Un principio de diseño transversal, motivado por tratarse de datos de salud (categoría
 especial según RGPD/LOPDGDD): **los embeddings y la generación de texto para RAG se ejecutan
@@ -42,13 +52,15 @@ calidad suficiente. Ver el detalle de esta y otras decisiones de arquitectura en
 |---|---|
 | API web | FastAPI (async), Uvicorn |
 | Validación / esquemas | Pydantic v2 |
-| Persistencia | PostgreSQL 16 + `pgvector` (caché semántica), SQLAlchemy 2.0 async, `asyncpg` |
+| Persistencia | PostgreSQL 16 + `pgvector`, SQLAlchemy 2.0 async, `asyncpg`, Alembic (migraciones) |
 | LLM local | Ollama (`llama3` para generación, `nomic-embed-text` para embeddings) |
-| LLM multimodal remoto | Google Gemini 1.5 Pro (`google-genai`), exclusivo para extracción de recetas |
+| LLM multimodal remoto | Google Gemini (`google-genai`, modelo `gemini-flash-latest`), exclusivo para extracción de recetas |
 | Fuente de datos oficial | API REST de CIMA/AEMPS (`https://cima.aemps.es/cima/rest`) |
+| Autenticación | API key por cabecera (`X-API-Key`), opcional |
 | Observabilidad | Sentry (`sentry-sdk`, captura de errores a nivel de aplicación) |
 | Configuración | `pydantic-settings` (fuente única de variables de entorno) |
-| Calidad | Ruff (lint + format), Pytest, GitHub Actions |
+| Contenedores | Docker, Docker Compose |
+| Calidad | Ruff (lint + format), Pytest + `pytest-cov` (umbral 85%), GitHub Actions (lint/tests + migraciones) |
 
 ### Arquitectura: Clean Architecture / monolito modular
 
@@ -67,22 +79,27 @@ src/
 │   ├── agents/                 # RAGPharmAgent, PrescriptionAgent, SafetyCheckAgent
 │   └── services/                # DrugService (orquestación CIMA + Ollama + pgvector)
 ├── use_cases/                # Puntos de entrada explícitos e independientes del transporte
+│                                #   ConsultDrugRAGUseCase, ProcessPrescriptionUseCase
 └── infrastructure/           # Framework web, clientes externos, persistencia, configuración
-    ├── api/                     # FastAPI: routers, esquemas Pydantic REST, main.py
+    ├── api/                     # FastAPI: routers, esquemas Pydantic REST, main.py, security.py
     ├── config/                   # pydantic-settings (única fuente de variables de entorno)
     ├── external/                  # CimaAPIClient, OllamaClient, GeminiClient
     ├── models/ · repositories/     # ORM SQLAlchemy + pgvector, repositorios
     └── database.py                # Motor async de PostgreSQL
+
+migrations/                  # Migraciones Alembic (esquema versionado, no create_all)
+evaluation/                  # Dataset sintético + script de evaluación cuantitativa
 ```
 
 La inversión de dependencias se aplica mediante tipado estructural: `DrugService` y los
 agentes de `application/` dependen de puertos (`CimaDataSourcePort`, `LanguageModelPort`,
-`DrugRepositoryPort`, `PrescriptionVisionPort` en
+`DrugRepositoryPort`, `PrescriptionVisionPort`, `PrescriptionRecordRepositoryPort` en
 [drug_ports.py](src/domain/ports/drug_ports.py)), no de las clases concretas de
 `infrastructure/`. Estas últimas los satisfacen por estructura (`Protocol`
 `@runtime_checkable`), sin herencia — verificable con `isinstance()`. Esto permite sustituir
 cualquier proveedor externo (o testear con dobles en memoria, ver
-[Pruebas automatizadas](#pruebas-automatizadas)) sin tocar el dominio ni los agentes.
+[Pruebas automatizadas](#pruebas-automatizadas-y-cobertura)) sin tocar el dominio ni los
+agentes.
 
 > Los agentes se documentan en detalle en [AGENTS.md](AGENTS.md) y las herramientas
 > (*tools*) que definen su contrato conceptual en [SKILLS.md](SKILLS.md). Ambos documentos
@@ -92,12 +109,17 @@ cualquier proveedor externo (o testear con dobles en memoria, ver
 ## Requisitos previos
 
 - **Python 3.11+** (desarrollado y probado con 3.14).
-- **Docker** y **Docker Compose** (para PostgreSQL + pgvector y Ollama).
+- **Docker** y **Docker Compose** (para PostgreSQL + pgvector, Ollama y, opcionalmente, la
+  propia API).
 - Una **API key de Google Gemini** (opcional — solo necesaria para probar
-  `/analyze-prescription`; el resto de la API funciona sin ella). Se obtiene en
-  [Google AI Studio](https://aistudio.google.com/).
+  `/analyze-prescription`/`/process-prescription`; el resto de la API funciona sin ella). Se
+  obtiene en [Google AI Studio](https://aistudio.google.com/).
 
 ## Instrucciones de despliegue en local
+
+Estos pasos ejecutan la API directamente con Uvicorn (fuera de Docker), útil para
+desarrollo activo. Para un despliegue completo en contenedores, ver
+[Despliegue con Docker Compose](#despliegue-con-docker-compose).
 
 1. **Clonar el repositorio e instalar dependencias** en un entorno virtual:
 
@@ -111,7 +133,7 @@ cualquier proveedor externo (o testear con dobles en memoria, ver
 2. **Levantar PostgreSQL (pgvector) y Ollama** con Docker Compose:
 
    ```bash
-   docker-compose up -d
+   docker compose up -d postgres ollama
    ```
 
 3. **Descargar los modelos de Ollama** (una sola vez; persisten en el volumen
@@ -129,16 +151,16 @@ cualquier proveedor externo (o testear con dobles en memoria, ver
    cp .env.example .env
    ```
 
-   Añadir `GOOGLE_API_KEY` en `.env` solo si se va a probar `/analyze-prescription`.
-   `EMBEDDING_PROVIDER` debe permanecer en `ollama` — ver
+   Añadir `GOOGLE_API_KEY` en `.env` solo si se va a probar `/analyze-prescription` o
+   `/process-prescription`. `EMBEDDING_PROVIDER` debe permanecer en `ollama` — ver
    [.memory/DECISIONS.md](.memory/DECISIONS.md) sobre por qué los embeddings nunca usan un
-   proveedor externo.
+   proveedor externo. Ver [Autenticación y CORS](#autenticación-y-cors) para `API_KEY` y
+   `CORS_ALLOWED_ORIGINS`.
 
-5. **Inicializar el esquema de base de datos** (habilita la extensión `pgvector` y crea las
-   tablas):
+5. **Aplicar las migraciones de base de datos** (crea el esquema, habilita `pgvector`):
 
    ```bash
-   python -m src.infrastructure.init_db
+   alembic upgrade head
    ```
 
 6. **(Opcional) Poblar la caché semántica** con una ingesta inicial desde CIMA en vivo:
@@ -156,17 +178,42 @@ cualquier proveedor externo (o testear con dobles en memoria, ver
    La documentación interactiva (OpenAPI/Swagger) queda disponible en
    `http://localhost:8000/docs`.
 
+## Despliegue con Docker Compose
+
+La API tiene su propio [Dockerfile](Dockerfile) (imagen `python:3.12-slim`, usuario no
+root) y un servicio `api` en [docker-compose.yml](docker-compose.yml) que levanta los tres
+componentes juntos:
+
+```bash
+cp .env.example .env   # ajustar GOOGLE_API_KEY si se necesita
+docker compose up -d
+```
+
+El contenedor `api` ejecuta `alembic upgrade head` automáticamente antes de arrancar
+Uvicorn (ver `command` en `docker-compose.yml`), así que el esquema de base de datos queda
+listo sin pasos manuales. `DATABASE_URL`/`OLLAMA_BASE_URL` se sobrescriben dentro de
+Compose para resolver los servicios por nombre de contenedor (`postgres`, `ollama`) en vez
+de `localhost`. Tras el arranque, poblar la caché semántica igual que en el paso 6 anterior
+(desde dentro del contenedor o desde el host, según convenga):
+
+```bash
+docker exec pharmagent_api python -m scripts.ingest_drugs
+```
+
 ## Endpoints de la API
 
-Prefijo común: `/api/v1/pharmacy` (excepto `/health`).
+Prefijo común: `/api/v1/pharmacy` (excepto `/health`). Si `API_KEY` está configurada, todos
+los endpoints de este prefijo requieren la cabecera `X-API-Key` — ver
+[Autenticación y CORS](#autenticación-y-cors).
 
 | Método | Ruta | Descripción | Agente / servicio |
 |---|---|---|---|
-| `GET` | `/health` | Comprobación de disponibilidad del servicio | — |
+| `GET` | `/health` | Comprobación de disponibilidad del servicio (sin autenticación) | — |
 | `POST` | `/search` | Búsqueda semántica de fármacos en la caché vectorial | `DrugService` |
 | `POST` | `/consult` | Consulta en lenguaje natural, respuesta *grounded* | `RAGPharmAgent` |
-| `POST` | `/check-interactions` | Verificación de interacciones entre 2+ fármacos | `SafetyCheckAgent` |
+| `POST` | `/check-interactions` | Verificación de interacciones entre 2+ fármacos (base curada + LLM local) | `SafetyCheckAgent` |
 | `POST` | `/analyze-prescription` | Extracción estructurada desde imagen de receta | `PrescriptionAgent` |
+| `POST` | `/process-prescription` | Flujo completo: extracción + verificación automática de interacciones, con persistencia auditable | `ProcessPrescriptionUseCase` |
 
 ### Ejemplos de uso
 
@@ -221,12 +268,18 @@ Prefijo común: `/api/v1/pharmacy` (excepto `/health`).
       "secondary_drug": "aspirina",
       "severity": "SEVERE",
       "description": "Efecto anticoagulante/antiagregante combinado: aumenta significativamente el riesgo de hemorragia.",
-      "clinical_recommendation": "Evitar la combinación salvo indicación médica expresa; si es necesaria, monitorizar INR estrechamente."
+      "clinical_recommendation": "Evitar la combinación salvo indicación médica expresa; si es necesaria, monitorizar INR estrechamente.",
+      "source": "curated"
     }
   ],
   "verdict": "requiere_revision_medica"
 }
 ```
+
+`source` indica si la interacción procede de la base curada interna (`"curated"`,
+autoritativa) o del razonamiento del modelo local para una combinación no cubierta por esa
+base (`"llm"`) — ver [AGENTS.md](AGENTS.md#2-safetycheckagent) para el diseño híbrido
+completo y [EVALUATION.md](EVALUATION.md) para su exactitud medida.
 
 **Análisis de receta** (`POST /api/v1/pharmacy/analyze-prescription`, `multipart/form-data`
 con campo `file`):
@@ -241,30 +294,111 @@ con campo `file`):
 }
 ```
 
-## Pruebas automatizadas
+**Flujo completo** (`POST /api/v1/pharmacy/process-prescription`, `multipart/form-data` con
+campo `file`):
+
+```json
+// Response 200
+{
+  "prescription": {
+    "drugs": [
+      { "farmaco": "Warfarina", "dosificacion": "5 mg", "frecuencia": "cada 24 horas", "duracion": "30 días" },
+      { "farmaco": "Aspirina", "dosificacion": "100 mg", "frecuencia": "cada 24 horas", "duracion": "30 días" }
+    ],
+    "advertencias": []
+  },
+  "safety_check": {
+    "interactions": [
+      { "primary_drug": "warfarina", "secondary_drug": "aspirina", "severity": "SEVERE", "...": "..." }
+    ],
+    "verdict": "requiere_revision_medica"
+  }
+}
+```
+
+`safety_check` es `null` si la extracción identificó menos de 2 fármacos. El resultado
+completo se persiste como registro auditable en la tabla `prescription_records` (ver
+[Migraciones de base de datos](#migraciones-de-base-de-datos)).
+
+## Autenticación y CORS
+
+- **API key** (`X-API-Key`): controlada por la variable `API_KEY` en `.env`. Si está
+  vacía/ausente (por defecto en desarrollo local y en CI), la autenticación queda
+  **desactivada** — apropiado para evaluación del TFM sin fricción. En un despliegue real,
+  fijar un valor y enviarlo en cada petición:
+
+  ```bash
+  curl -H "X-API-Key: tu-clave" http://localhost:8000/api/v1/pharmacy/search -d '...'
+  ```
+
+  `/health` queda siempre fuera de la autenticación (uso típico de *healthchecks* de
+  infraestructura sin credenciales).
+- **CORS**: controlado por `CORS_ALLOWED_ORIGINS` (lista JSON de orígenes permitidos,
+  `["*"]` por defecto — apropiado para desarrollo local, debe restringirse en producción).
+
+## Pruebas automatizadas y cobertura
 
 ```bash
-pytest              # suite completa (unit + integration)
-ruff check .         # lint
-ruff format --check .  # formato
+pytest                                                  # suite completa (unit + integration)
+pytest --cov=src --cov-report=term-missing              # con reporte de cobertura
+ruff check .                                              # lint
+ruff format --check .                                       # formato
 ```
 
 La suite (`tests/unit/`, `tests/integration/`) es determinista y no requiere Docker, red ni
 credenciales: las dependencias externas (CIMA, Ollama, PostgreSQL, Gemini) se sustituyen por
 dobles en memoria vía `app.dependency_overrides` de FastAPI (ver
-[tests/integration/conftest.py](tests/integration/conftest.py)), aprovechando que la propia
-arquitectura de puertos del dominio hace estos dobles triviales de construir. El pipeline de
-integración continua ([.github/workflows/ci.yml](.github/workflows/ci.yml)) ejecuta lint,
-formato y tests en cada `push`/`pull_request` a `main`.
+[tests/integration/conftest.py](tests/integration/conftest.py)) o vía `httpx.MockTransport`/
+mocks directos para los clientes HTTP individuales (`tests/unit/test_cima_client.py`,
+`test_ollama_client.py`, `test_gemini_client.py`), aprovechando que la propia arquitectura de
+puertos del dominio hace estos dobles triviales de construir. Cobertura actual: **~87%**
+(umbral de CI: 85%, configurado en [.coveragerc](.coveragerc)). El pipeline de integración
+continua ([.github/workflows/ci.yml](.github/workflows/ci.yml)) ejecuta lint, formato, tests
+con cobertura, y un job independiente que aplica y revierte las migraciones Alembic contra un
+Postgres real de servicio — todo en cada `push`/`pull_request` a `main`.
+
+## Evaluación cuantitativa
+
+Además de la suite de tests (que verifica comportamiento, no exactitud), el proyecto incluye
+una evaluación cuantitativa de `SafetyCheckAgent` y `PrescriptionAgent` sobre un dataset
+sintético, ejecutada contra los servicios reales (Ollama, Gemini):
+
+```bash
+python -m evaluation.run_evaluation
+```
+
+Resultados de referencia, metodología, limitaciones y hallazgos (incluyendo un bug real de
+producción descubierto durante la evaluación) están documentados en
+[EVALUATION.md](EVALUATION.md).
+
+## Migraciones de base de datos
+
+El esquema se gestiona con Alembic (no `Base.metadata.create_all`):
+
+```bash
+alembic upgrade head              # aplicar todas las migraciones pendientes
+alembic revision --autogenerate -m "descripción"   # generar una nueva migración tras cambiar un modelo ORM
+alembic downgrade -1              # revertir la última migración
+```
+
+`migrations/env.py` usa `settings.database_url` (misma fuente de configuración que el resto
+de la aplicación) y `Base.metadata` de los modelos ORM reales — no hay una URL de conexión
+duplicada en `alembic.ini`.
 
 ## Estado del proyecto
 
 Progreso detallado, decisiones de arquitectura y bugs resueltos se documentan de forma viva
 en [.memory/](.memory/) (`CONTEXT.md`, `ROADMAP.md`, `DECISIONS.md`, `BUGS.md`) siguiendo el
 protocolo de memoria descrito en [CLAUDE.md](CLAUDE.md). En resumen: los tres agentes, la
-API REST completa, la ingesta desde CIMA, la suite de tests y el pipeline de CI están
-implementados y verificados contra servicios reales. Limitaciones conocidas y aceptadas
-(fuera de alcance hasta ahora): la base de interacciones de `SafetyCheckAgent` es curada y
-mínima (no una fuente clínica completa), `RAGPharmAgent` consulta solo la caché vectorial
-local por petición (CIMA en vivo se usa únicamente en la ingesta por lotes), y no existe
-todavía una entidad de dominio `Drug` desacoplada del modelo ORM.
+orquestación end-to-end, la API REST completa (con autenticación, CORS y persistencia
+auditable), la ingesta desde CIMA, las migraciones versionadas, la suite de tests con
+cobertura medida, la evaluación cuantitativa y el pipeline de CI están implementados y
+verificados contra servicios reales — no solo contra dobles de test. Limitaciones conocidas
+y aceptadas (fuera de alcance hasta ahora): la base curada de `SafetyCheckAgent` es mínima
+(6 pares) y su complemento por LLM es un mecanismo de asistencia, no una fuente clínica
+verificada; `RAGPharmAgent` consulta solo la caché vectorial local por petición (CIMA en
+vivo se usa únicamente en la ingesta por lotes); no existe todavía una entidad de dominio
+`Drug` desacoplada del modelo ORM; y la extracción de `PrescriptionAgent` se persiste como
+registro auditable en JSON crudo, no normalizada a la entidad de dominio estricta
+`Prescription`/`PrescribedDrug` (ver la nota de diseño en
+[prescription_record_model.py](src/infrastructure/models/prescription_record_model.py)).
