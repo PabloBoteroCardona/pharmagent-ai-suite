@@ -209,46 +209,61 @@ los endpoints de este prefijo requieren la cabecera `X-API-Key` — ver
 | Método | Ruta | Descripción | Agente / servicio |
 |---|---|---|---|
 | `GET` | `/health` | Comprobación de disponibilidad del servicio (sin autenticación) | — |
-| `POST` | `/search` | Búsqueda semántica de fármacos en la caché vectorial | `DrugService` |
-| `POST` | `/consult` | Consulta en lenguaje natural, respuesta *grounded* | `RAGPharmAgent` |
+| `POST` | `/search` | Búsqueda de fármacos: caché vectorial primero, CIMA en vivo como respaldo automático | `DrugService` |
+| `POST` | `/consult` | Consulta en lenguaje natural, respuesta *grounded* (caché + CIMA en vivo como respaldo) | `RAGPharmAgent` |
 | `POST` | `/check-interactions` | Verificación de interacciones entre 2+ fármacos (base curada + LLM local) | `SafetyCheckAgent` |
 | `POST` | `/analyze-prescription` | Extracción estructurada desde imagen de receta | `PrescriptionAgent` |
 | `POST` | `/process-prescription` | Flujo completo: extracción + verificación automática de interacciones, con persistencia auditable | `ProcessPrescriptionUseCase` |
 
 ### Ejemplos de uso
 
-**Búsqueda semántica** (`POST /api/v1/pharmacy/search`):
+**Búsqueda de fármacos** (`POST /api/v1/pharmacy/search`) — consulta primero la caché
+vectorial local; si no encuentra nada suficientemente relevante, busca en vivo en CIMA
+(AEMPS) automáticamente y lo indexa para que consultas futuras sobre el mismo fármaco sean
+instantáneas:
 
 ```json
 // Request
-{ "query": "antiinflamatorio para dolor de cabeza", "limit": 3 }
+{ "query": "metformina", "limit": 3 }
 ```
 
 ```json
-// Response 200
-[
-  {
-    "nregistro": "80298",
-    "nombre": "Ibuprofeno Test 600mg",
-    "pactivos": "ibuprofeno",
-    "labtitular": "Laboratorio Test S.A."
-  }
-]
+// Response 200 (fármaco no cacheado todavía → consultado en vivo en CIMA)
+{
+  "results": [
+    {
+      "nregistro": "68167",
+      "nombre": "METFORMINA CINFA 850 mg COMPRIMIDOS RECUBIERTOS CON PELICULA EFG",
+      "pactivos": "METFORMINA HIDROCLORURO",
+      "labtitular": "Laboratorios Cinfa S.A."
+    }
+  ],
+  "source": "live"
+}
 ```
 
-**Consulta RAG** (`POST /api/v1/pharmacy/consult`):
+`source` indica la procedencia: `"cache"` (caché vectorial local), `"live"` (CIMA en vivo,
+recién indexado) o `"none"` (ni la caché ni CIMA en vivo encontraron nada — puede ocurrir si
+el nombre no coincide literalmente con cómo lo registra CIMA, p. ej. "warfarina" no se
+encuentra porque en España se comercializa como "Aldocumar").
+
+**Consulta RAG** (`POST /api/v1/pharmacy/consult`) — mismo mecanismo caché+CIMA en vivo que
+`/search`; el campo opcional `drug_name` acota la búsqueda del fármaco cuando `query` es una
+pregunta en lenguaje natural sin el nombre exacto (CIMA hace coincidencia literal de nombre,
+no búsqueda semántica):
 
 ```json
 // Request
-{ "query": "¿qué dosis de ibuprofeno es adecuada para un adulto?" }
+{ "query": "¿qué dosis es adecuada para un adulto?", "drug_name": "ibuprofeno" }
 ```
 
 ```json
 // Response 200
 {
-  "query": "¿qué dosis de ibuprofeno es adecuada para un adulto?",
+  "query": "¿qué dosis es adecuada para un adulto?",
   "response": "La dosis habitual en adultos es de 400-600 mg cada 8 horas...",
-  "sources": ["Ibuprofeno Test 600mg"]
+  "sources": ["Ibuprofeno Test 600mg"],
+  "source": "cache"
 }
 ```
 
@@ -391,14 +406,15 @@ Progreso detallado, decisiones de arquitectura y bugs resueltos se documentan de
 en [.memory/](.memory/) (`CONTEXT.md`, `ROADMAP.md`, `DECISIONS.md`, `BUGS.md`) siguiendo el
 protocolo de memoria descrito en [CLAUDE.md](CLAUDE.md). En resumen: los tres agentes, la
 orquestación end-to-end, la API REST completa (con autenticación, CORS y persistencia
-auditable), la ingesta desde CIMA, las migraciones versionadas, la suite de tests con
-cobertura medida, la evaluación cuantitativa y el pipeline de CI están implementados y
-verificados contra servicios reales — no solo contra dobles de test. Limitaciones conocidas
-y aceptadas (fuera de alcance hasta ahora): la base curada de `SafetyCheckAgent` es mínima
-(6 pares) y su complemento por LLM es un mecanismo de asistencia, no una fuente clínica
-verificada; `RAGPharmAgent` consulta solo la caché vectorial local por petición (CIMA en
-vivo se usa únicamente en la ingesta por lotes); no existe todavía una entidad de dominio
-`Drug` desacoplada del modelo ORM; y la extracción de `PrescriptionAgent` se persiste como
-registro auditable en JSON crudo, no normalizada a la entidad de dominio estricta
+auditable), la ingesta desde CIMA (por lotes y automática al consultar), las migraciones
+versionadas, la suite de tests con cobertura medida, la evaluación cuantitativa y el
+pipeline de CI están implementados y verificados contra servicios reales — no solo contra
+dobles de test. Limitaciones conocidas y aceptadas (fuera de alcance hasta ahora): la base
+curada de `SafetyCheckAgent` es mínima (6 pares) y su complemento por LLM es un mecanismo de
+asistencia, no una fuente clínica verificada; el respaldo de CIMA en vivo de `/search` y
+`/consult` depende de que el nombre buscado coincida literalmente con cómo lo registra CIMA
+(sin búsqueda semántica del lado de CIMA); no existe todavía una entidad de dominio `Drug`
+desacoplada del modelo ORM; y la extracción de `PrescriptionAgent` se persiste como registro
+auditable en JSON crudo, no normalizada a la entidad de dominio estricta
 `Prescription`/`PrescribedDrug` (ver la nota de diseño en
 [prescription_record_model.py](src/infrastructure/models/prescription_record_model.py)).

@@ -12,7 +12,19 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.infrastructure.api import security
-from tests.integration.conftest import FAKE_DRUG, FAKE_RAG_RESPONSE_TEXT
+from src.infrastructure.api.main import app
+from src.infrastructure.api.routers.pharmacy_router import (
+    get_cima_client,
+    get_drug_repository,
+)
+from tests.integration.conftest import (
+    FAKE_DRUG,
+    FAKE_LIVE_DRUG_DETAIL,
+    FAKE_LIVE_DRUG_SEARCH_RESULT,
+    FAKE_RAG_RESPONSE_TEXT,
+    FakeCimaClient,
+    FakeDrugRepository,
+)
 
 
 class TestHealthEndpoint:
@@ -24,14 +36,15 @@ class TestHealthEndpoint:
 
 
 class TestSearchEndpoint:
-    def test_search_returns_matching_drugs(self, client: TestClient) -> None:
+    def test_search_returns_matching_drugs_from_cache(self, client: TestClient) -> None:
         response = client.post(
             "/api/v1/pharmacy/search", json={"query": "dolor de cabeza", "limit": 3}
         )
 
         assert response.status_code == 200
         body = response.json()
-        assert body == [
+        assert body["source"] == "cache"
+        assert body["results"] == [
             {
                 "nregistro": FAKE_DRUG.nregistro,
                 "nombre": FAKE_DRUG.nombre,
@@ -40,6 +53,54 @@ class TestSearchEndpoint:
             }
         ]
 
+    def test_search_falls_back_to_live_cima_when_cache_is_empty(
+        self, client: TestClient
+    ) -> None:
+        """Con la caché vacía (fármaco no indexado todavía), `/search` debe consultar
+        CIMA en vivo automáticamente en vez de devolver una lista vacía."""
+        app.dependency_overrides[get_drug_repository] = lambda: FakeDrugRepository(
+            cached_results=[]
+        )
+        app.dependency_overrides[get_cima_client] = lambda: FakeCimaClient(
+            search_results=[FAKE_LIVE_DRUG_SEARCH_RESULT],
+            medicamento_detail=FAKE_LIVE_DRUG_DETAIL,
+        )
+
+        response = client.post(
+            "/api/v1/pharmacy/search", json={"query": "paracetamol", "limit": 3}
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["source"] == "live"
+        assert body["results"] == [
+            {
+                "nregistro": FAKE_LIVE_DRUG_DETAIL["nregistro"],
+                "nombre": FAKE_LIVE_DRUG_DETAIL["nombre"],
+                "pactivos": FAKE_LIVE_DRUG_DETAIL["pactivos"],
+                "labtitular": FAKE_LIVE_DRUG_DETAIL["labtitular"],
+            }
+        ]
+
+    def test_search_returns_none_source_when_neither_cache_nor_cima_have_it(
+        self, client: TestClient
+    ) -> None:
+        app.dependency_overrides[get_drug_repository] = lambda: FakeDrugRepository(
+            cached_results=[]
+        )
+        app.dependency_overrides[get_cima_client] = lambda: FakeCimaClient(
+            search_results=[]
+        )
+
+        response = client.post(
+            "/api/v1/pharmacy/search",
+            json={"query": "farmacoinexistentexyz", "limit": 3},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body == {"results": [], "source": "none"}
+
     def test_search_rejects_empty_query(self, client: TestClient) -> None:
         response = client.post("/api/v1/pharmacy/search", json={"query": ""})
 
@@ -47,7 +108,9 @@ class TestSearchEndpoint:
 
 
 class TestConsultEndpoint:
-    def test_consult_returns_grounded_answer(self, client: TestClient) -> None:
+    def test_consult_returns_grounded_answer_from_cache(
+        self, client: TestClient
+    ) -> None:
         response = client.post(
             "/api/v1/pharmacy/consult",
             json={"query": "¿cómo se toma el ibuprofeno?"},
@@ -58,6 +121,33 @@ class TestConsultEndpoint:
         assert body["query"] == "¿cómo se toma el ibuprofeno?"
         assert body["response"] == FAKE_RAG_RESPONSE_TEXT
         assert body["sources"] == [FAKE_DRUG.nombre]
+        assert body["source"] == "cache"
+
+    def test_consult_falls_back_to_live_cima_using_drug_name(
+        self, client: TestClient
+    ) -> None:
+        """Sin el fármaco en caché, pero indicando `drug_name`, `/consult` debe
+        encontrarlo en vivo en CIMA y usarlo como contexto de la respuesta."""
+        app.dependency_overrides[get_drug_repository] = lambda: FakeDrugRepository(
+            cached_results=[]
+        )
+        app.dependency_overrides[get_cima_client] = lambda: FakeCimaClient(
+            search_results=[FAKE_LIVE_DRUG_SEARCH_RESULT],
+            medicamento_detail=FAKE_LIVE_DRUG_DETAIL,
+        )
+
+        response = client.post(
+            "/api/v1/pharmacy/consult",
+            json={
+                "query": "¿qué dosis es adecuada?",
+                "drug_name": "paracetamol",
+            },
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["source"] == "live"
+        assert body["sources"] == [FAKE_LIVE_DRUG_DETAIL["nombre"]]
 
     def test_consult_rejects_empty_query(self, client: TestClient) -> None:
         response = client.post("/api/v1/pharmacy/consult", json={"query": ""})

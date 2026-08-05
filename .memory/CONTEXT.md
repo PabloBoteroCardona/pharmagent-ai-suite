@@ -17,16 +17,58 @@ herramientas, y [EVALUATION.md](../EVALUATION.md) para su evaluación cuantitati
 
 ## Estado actual
 
-**[BLOQUE D] "Profesionalización" — ✅ completado (10/10 pasos).** Tras cerrar
-[BLOQUE A]/[B]/[C], se evaluó el proyecto con ojo crítico (puntos débiles señalados:
-`SafetyCheckAgent` sin LLM, `RAGPharmAgent` no consulta CIMA en vivo por petición, sin auth,
-sin CORS, sin persistencia real de recetas, sin migraciones Alembic, sin evaluación
-cuantitativa, cobertura de tests superficial). El usuario pidió corregir "todo lo necesario
-para que quede un proyecto profesional"; se implementó con criterio propio (instrucción
-explícita del usuario) en 9 mejoras + cierre de documentación. Todos los bloques
-A/B/C/D están ahora cerrados y verificados.
+**[BLOQUE D] "Profesionalización" — ✅ completado (10/10 pasos), + corrección posterior de
+CIMA en vivo en `/search`/`/consult` — ✅ completada.** Tras cerrar [BLOQUE A]/[B]/[C], se
+evaluó el proyecto con ojo crítico (puntos débiles señalados: `SafetyCheckAgent` sin LLM,
+`RAGPharmAgent` no consulta CIMA en vivo por petición, sin auth, sin CORS, sin persistencia
+real de recetas, sin migraciones Alembic, sin evaluación cuantitativa, cobertura de tests
+superficial). El usuario pidió corregir "todo lo necesario para que quede un proyecto
+profesional"; se implementó con criterio propio en 9 mejoras + cierre de documentación
+(BLOQUE D). Después, el usuario preguntó explícitamente si consultar interacciones o un
+medicamento concreto consultaba CIMA en tiempo real — la respuesta honesta era que no, y
+pidió corregirlo ("si no de que sirve"). Se implementó un respaldo real de CIMA en vivo para
+`/search` y `/consult` (ver "Último hito verificado" para el detalle, incluyendo un bug real
+de métrica de relevancia encontrado y corregido durante la verificación contra Postgres
+real). Todos los bloques A/B/C/D están cerrados y verificados, más esta corrección posterior.
 
 ## Último hito verificado
+
+**CIMA en vivo como respaldo real de `/search` y `/consult`.** Ver
+[DECISIONS.md](DECISIONS.md) para el detalle completo. Resumen ejecutivo:
+
+- **Antes**: `/search` y `/consult` solo miraban `pgvector` (caché poblada exclusivamente
+  por `scripts/ingest_drugs.py`, 12 fármacos); cualquier otro fármaco devolvía vacío aunque
+  CIMA lo tuviera. `/check-interactions` nunca tocó CIMA (correcto — CIMA no tiene endpoint
+  de interacciones, solo fichas técnicas).
+- **`DrugService.search_drugs_semantic`** ahora devuelve `DrugSearchResult(drugs, source)`:
+  consulta la caché primero y, si no hay resultados relevantes, cae a
+  `CimaAPIClient.search_medicamentos` en vivo, indexando automáticamente hasta 3 resultados
+  (mismo criterio que la ingesta por lotes) para que consultas futuras sean instantáneas.
+- **`RAGPharmAgent`/`ConsultDrugRAGUseCase`** ganaron un parámetro `drug_name` opcional —
+  CIMA hace coincidencia literal de nombre, no búsqueda semántica.
+- **Endpoints**: `POST /search` devuelve ahora `{"results": [...], "source":
+  "cache"|"live"|"none"}`; `POST /consult` acepta `drug_name` y devuelve `source` igual.
+- **Bug real encontrado y corregido durante la verificación**: la primera versión filtraba
+  la caché por `pgvector.l2_distance`, pero se descubrió (verificando contra Postgres real)
+  que L2 es sensible a la longitud del texto — una consulta de una palabra quedaba
+  artificialmente lejos incluso del propio fármaco que describe (L2≈16.6 vs. L2≈5.4-9.9 para
+  la misma comparación con más texto), rompiendo el cache hit en la práctica. Corregido a
+  `pgvector.cosine_distance` (umbral `MAX_RELEVANT_COSINE_DISTANCE = 0.35`,
+  [drug_repository.py](../src/infrastructure/repositories/drug_repository.py)), que separó
+  limpiamente relevante (coseno≈0.24-0.33) de irrelevante (coseno≈0.38-0.48) en las pruebas.
+- **Verificado contra servicios reales, no solo dobles**: `enalapril` (no cacheado) →
+  `source: "live"` en 0.76s + indexado; segunda consulta → `source: "cache"` en 0.04s.
+  `amlodipino`/`losartan` probados vía HTTP real contra un servidor Uvicorn local.
+  `warfarina` → `source: "none"` (CIMA no reconoce ese nombre — en España es "Aldocumar"),
+  confirmando el límite real de la coincidencia por nombre literal.
+- **Verificación**: 114 tests (`pytest`, +15 nuevos: `test_drug_service.py`,
+  `test_pharmacy_agent.py` nuevos; casos añadidos en `test_consult_use_case.py` y
+  `test_api_endpoints.py`), `ruff check .`/`ruff format --check .` limpios.
+- **Documentación actualizada**: `AGENTS.md` (sección RAGPharmAgent reescrita con nota de
+  verificación), `SKILLS.md` (`search_cima_official_data`), `README.md` (ejemplos de
+  `/search`/`/consult` actualizados, sección de limitaciones).
+
+---
 
 **[BLOQUE D] — Profesionalización: auth, Docker, orquestación, `SafetyCheckAgent` híbrido,
 persistencia, Alembic, tests de clientes, cobertura, evaluación cuantitativa.** Ver
@@ -264,7 +306,8 @@ la escritura real en Postgres sigue bloqueada por el bug de `asyncpg`/Windows �
 ## Siguiente paso pendiente
 
 Sin un PASO/BLOQUE numerado asignado todavía — [BLOQUE A]/[B]/[C]/[D] están todos cerrados y
-verificados. Candidatos para un bloque futuro (no priorizados por el usuario):
+verificados, más la corrección posterior de CIMA en vivo en `/search`/`/consult`. Candidatos
+para un bloque futuro (no priorizados por el usuario):
 
 1. Desacoplar `DrugRepositoryPort` de `DrugModel` (ORM) con una entidad de dominio `Drug`
    pura (limitación aceptada desde BLOQUE A).
@@ -280,9 +323,10 @@ verificados. Candidatos para un bloque futuro (no priorizados por el usuario):
    interacción" y "el LLM no respondió/timeout" — hoy ambos casos producen `interactions: []`
    sin diferenciarse en la salida (limitación señalada en
    [EVALUATION.md](../EVALUATION.md)).
-5. `RAGPharmAgent` con CIMA en vivo por petición además de la caché vectorial (hoy CIMA en
-   vivo es exclusivo de la ingesta por lotes).
-6. Desplegar la API en un entorno remoto para la defensa del TFM.
-7. Orquestar los 3 agentes (incluyendo `RAGPharmAgent`) en un único flujo de nivel superior,
+5. Desplegar la API en un entorno remoto para la defensa del TFM.
+6. Orquestar los 3 agentes (incluyendo `RAGPharmAgent`) en un único flujo de nivel superior,
    más allá de `ProcessPrescriptionUseCase` (que solo compone `PrescriptionAgent` +
    `SafetyCheckAgent`).
+7. El respaldo de CIMA en vivo depende de coincidencia literal de nombre — considerar
+   normalización de nombres comerciales/genéricos (p. ej. mapear "warfarina" → "Aldocumar")
+   si se quiere mejorar la tasa de aciertos del respaldo en vivo.

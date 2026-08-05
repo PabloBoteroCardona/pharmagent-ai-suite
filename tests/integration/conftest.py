@@ -32,6 +32,22 @@ FAKE_DRUG = SimpleNamespace(
     documento_html="Indicado para el alivio del dolor leve a moderado.",
 )
 
+FAKE_LIVE_DRUG_SEARCH_RESULT = {"nregistro": "99999", "nombre": "Paracetamol Test 1g"}
+FAKE_LIVE_DRUG_DETAIL = {
+    "nregistro": "99999",
+    "nombre": "Paracetamol Test 1g",
+    "pactivos": "paracetamol",
+    "labtitular": "Laboratorio Live S.A.",
+    "cpresc": "sin receta",
+}
+FAKE_LIVE_DRUG = SimpleNamespace(
+    nregistro="99999",
+    nombre="Paracetamol Test 1g",
+    pactivos="paracetamol",
+    labtitular="Laboratorio Live S.A.",
+    documento_html="Prospecto de prueba en vivo.",
+)
+
 FAKE_RAG_RESPONSE_TEXT = "Respuesta simulada basada en el contexto de prueba."
 
 FAKE_PRESCRIPTION_ANALYSIS = {
@@ -48,14 +64,30 @@ FAKE_PRESCRIPTION_ANALYSIS = {
 
 
 class FakeCimaClient:
+    """Por defecto no encuentra nada (simula que CIMA tampoco tiene el fármaco). Pasar
+    `search_results`/`medicamento_detail` para simular que CIMA sí lo encuentra en vivo."""
+
+    def __init__(
+        self,
+        search_results: list[dict] | None = None,
+        medicamento_detail: dict | None = None,
+    ) -> None:
+        self._search_results = search_results or []
+        self._medicamento_detail = medicamento_detail
+
     async def search_medicamentos(self, nombre: str) -> list[dict]:
-        return []
+        return self._search_results
 
     async def get_medicamento_by_nregistro(self, nregistro: str) -> dict | None:
+        if (
+            self._medicamento_detail
+            and self._medicamento_detail["nregistro"] == nregistro
+        ):
+            return self._medicamento_detail
         return None
 
     async def get_prospecto_html(self, nregistro: str) -> str | None:
-        return None
+        return "Prospecto de prueba en vivo." if self._medicamento_detail else None
 
 
 class FakeOllamaClient:
@@ -71,8 +103,17 @@ class FakeOllamaClient:
 
 
 class FakeDrugRepository:
+    """Por defecto simula un acierto de caché (`[FAKE_DRUG]`). Pasar
+    `cached_results=[]` para simular una caché vacía y ejercitar el respaldo de CIMA
+    en vivo de `DrugService.search_drugs_semantic`."""
+
+    def __init__(self, cached_results: list[SimpleNamespace] | None = None) -> None:
+        self._cached_results = [FAKE_DRUG] if cached_results is None else cached_results
+        self.saved_drugs: list[dict] = []
+
     async def save_drug(self, drug_data: dict) -> SimpleNamespace:
-        return FAKE_DRUG
+        self.saved_drugs.append(drug_data)
+        return FAKE_LIVE_DRUG
 
     async def get_by_nregistro(self, nregistro: str) -> SimpleNamespace | None:
         return FAKE_DRUG
@@ -80,7 +121,7 @@ class FakeDrugRepository:
     async def search_similar_by_vector(
         self, embedding: list[float], limit: int = 5
     ) -> list[SimpleNamespace]:
-        return [FAKE_DRUG]
+        return self._cached_results
 
 
 class FakeGeminiClient:

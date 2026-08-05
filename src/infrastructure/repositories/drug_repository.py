@@ -14,6 +14,28 @@ from src.infrastructure.models import DrugModel
 
 NON_UPDATABLE_FIELDS = {"id", "nregistro", "created_at"}
 
+# `pgvector` siempre devuelve los `limit` vecinos más cercanos, aunque ninguno sea
+# realmente relevante — sin un umbral, una búsqueda de un fármaco no cacheado nunca
+# devolvería "vacío", impidiendo el respaldo a CIMA en vivo de `DrugService`.
+#
+# Se usa distancia coseno, no L2: se comprobó empíricamente (contra la caché real del
+# proyecto, `nomic-embed-text` 768 dim) que L2 es sensible a la longitud del texto
+# comparado, no solo a su contenido semántico — una consulta corta de una palabra
+# ("metformina") queda artificialmente lejos (L2≈16.6) incluso del propio fármaco que
+# describe, mientras que consultas más largas del mismo fármaco quedan mucho más cerca
+# (L2≈5.4-9.9) sin ser más relevantes. La distancia coseno, al normalizar por magnitud,
+# no tiene ese problema: en las mismas pruebas, consultas relevantes midieron
+# coseno ≈ 0.24-0.33 y consultas irrelevantes ≈ 0.38-0.48, con una separación estable
+# independiente de la longitud de la consulta.
+#
+# Es una heurística, no una garantía: el modelo (no especializado en farmacia) no
+# siempre distingue fármacos relacionados por mecanismo — p. ej. "omeprazol" quedó a
+# coseno≈0.40 de "esomeprazol" ya cacheado, tan lejos como de fármacos no relacionados,
+# así que ese caso concreto cae al respaldo de CIMA en vivo en vez de a un cache hit
+# (comportamiento aceptable: solo implica una consulta extra a CIMA, no una respuesta
+# incorrecta). Umbral específico de este modelo de embedding — recalibrar si se cambia.
+MAX_RELEVANT_COSINE_DISTANCE = 0.35
+
 
 class DrugRepository:
     """Repositorio de `DrugModel`, operando sobre una `AsyncSession` inyectada."""
@@ -47,11 +69,18 @@ class DrugRepository:
     async def search_similar_by_vector(
         self, embedding: list[float], limit: int = 5
     ) -> list[DrugModel]:
-        """Devuelve los fármacos más cercanos a `embedding` por distancia L2 (pgvector)."""
+        """Devuelve los fármacos cacheados relevantes para `embedding` (distancia
+        coseno por debajo de `MAX_RELEVANT_COSINE_DISTANCE`, ver constante del módulo).
+        Puede devolver una lista vacía si ningún fármaco cacheado es suficientemente
+        similar — eso es intencional: permite a `DrugService` distinguir "no hay nada
+        relevante en caché" (y recurrir a CIMA en vivo) de "sí hay algo, aunque no sea
+        un match perfecto"."""
+        distance = DrugModel.embedding.cosine_distance(embedding)
         result = await self._session.execute(
             select(DrugModel)
             .where(DrugModel.embedding.is_not(None))
-            .order_by(DrugModel.embedding.l2_distance(embedding))
+            .where(distance <= MAX_RELEVANT_COSINE_DISTANCE)
+            .order_by(distance)
             .limit(limit)
         )
         return list(result.scalars().all())

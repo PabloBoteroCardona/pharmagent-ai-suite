@@ -13,6 +13,8 @@ from src.infrastructure.api.schemas.drug_schemas import (
     ConsultationRequest,
     ConsultationResponse,
     DrugSearchQuery,
+    DrugSearchResponse,
+    DrugSearchResultItem,
     InteractionCheckRequest,
     InteractionCheckResponse,
     PrescriptionAnalysisResponse,
@@ -109,21 +111,28 @@ def get_process_prescription_use_case(
     )
 
 
-@router.post("/search")
+@router.post("/search", response_model=DrugSearchResponse)
 async def search_drugs(
     payload: DrugSearchQuery,
     drug_service: DrugService = Depends(get_drug_service),  # noqa: B008
-) -> list[dict]:
-    drugs = await drug_service.search_drugs_semantic(payload.query, limit=payload.limit)
-    return [
-        {
-            "nregistro": drug.nregistro,
-            "nombre": drug.nombre,
-            "pactivos": drug.pactivos,
-            "labtitular": drug.labtitular,
-        }
-        for drug in drugs
-    ]
+) -> DrugSearchResponse:
+    """Busca fármacos en la caché vectorial local; si no hay resultados, consulta CIMA
+    (AEMPS) en vivo automáticamente y los indexa para futuras búsquedas."""
+    result = await drug_service.search_drugs_semantic(
+        payload.query, limit=payload.limit
+    )
+    return DrugSearchResponse(
+        results=[
+            DrugSearchResultItem(
+                nregistro=drug.nregistro,
+                nombre=drug.nombre,
+                pactivos=drug.pactivos,
+                labtitular=drug.labtitular,
+            )
+            for drug in result.drugs
+        ],
+        source=result.source,
+    )
 
 
 @router.post("/consult", response_model=ConsultationResponse)
@@ -131,7 +140,9 @@ async def consult(
     payload: ConsultationRequest,
     use_case: ConsultDrugRAGUseCase = Depends(get_consult_drug_rag_use_case),  # noqa: B008
 ) -> ConsultationResponse:
-    result = await use_case.execute(payload.query)
+    """Responde una consulta en lenguaje natural; si la caché no tiene el fármaco
+    relevante, consulta CIMA (AEMPS) en vivo automáticamente antes de responder."""
+    result = await use_case.execute(payload.query, drug_name=payload.drug_name)
     return ConsultationResponse(**result)
 
 

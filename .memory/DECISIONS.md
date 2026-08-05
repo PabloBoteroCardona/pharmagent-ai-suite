@@ -3,6 +3,74 @@
 Registro de decisiones clave de arquitectura tomadas durante el desarrollo, complementario a
 los ADR formales en [docs/adr/](../docs/adr/).
 
+## CIMA en vivo como respaldo real de `/search` y `/consult` (no solo en la ingesta)
+
+**Contexto**: el usuario preguntó explícitamente si consultar interacciones o un medicamento
+concreto consultaba CIMA en tiempo real "reduciendo la pérdida de tiempo por otros métodos".
+La respuesta honesta era **no**: `/check-interactions` nunca toca CIMA (no tiene sentido —
+CIMA es una base de fichas técnicas, no un comprobador de interacciones), y `/search`/`/consult`
+solo miraban la caché vectorial local, poblada exclusivamente por un script de ingesta manual
+de 12 fármacos. Preguntar por cualquier fármaco fuera de esos 12 devolvía vacío, aunque CIMA
+lo tuviera perfectamente disponible. El usuario pidió corregirlo: "si no de que sirve".
+
+**Decisión**: `DrugService.search_drugs_semantic` ahora consulta primero la caché vectorial
+y, si no hay resultados relevantes, cae automáticamente a una búsqueda en vivo en CIMA
+(`CimaAPIClient.search_medicamentos`), indexando los primeros `LIVE_FALLBACK_MAX_RESULTS=3`
+resultados encontrados (mismo criterio que `scripts/ingest_drugs.py`). Se prioriza
+caché-primero sobre CIMA-primero (invirtiendo el orden del diseño objetivo de SKILLS.md) por
+rendimiento: evita un *round-trip* de red en cada consulta de un fármaco ya conocido. Devuelve
+un `DrugSearchResult(drugs, source)` con `source: "cache"|"live"|"none"` para que
+`/search`/`/consult` expongan la procedencia. `RAGPharmAgent.answer_consultation` y
+`ConsultDrugRAGUseCase.execute` ganaron un parámetro opcional `drug_name` — CIMA hace
+coincidencia literal de nombre, no búsqueda semántica, así que una pregunta en lenguaje
+natural sin el nombre exacto del fármaco no lo encontraría en CIMA aunque exista.
+
+**Bug real encontrado y corregido durante la implementación — métrica de relevancia**:
+la primera versión usó un umbral sobre `pgvector.l2_distance` (igual que ya usaba
+`search_similar_by_vector`) para decidir si la caché "tenía algo relevante". Al verificar
+contra la base real (Postgres + `nomic-embed-text` vía Ollama), se descubrió que la distancia
+L2 es sensible a la longitud del texto comparado, no solo a su contenido semántico: la
+consulta de una palabra `"metformina"` medía L2≈16.6 incluso frente al *propio* fármaco de
+metformina recién indexado, mientras que consultas más largas del mismo fármaco medían
+L2≈5.4-9.9 sin ser más relevantes — con cualquier umbral razonable, un fármaco recién
+cacheado no producía un cache hit en su siguiente consulta corta, rompiendo el propósito de
+cachear. Se sustituyó por `pgvector.cosine_distance`, que normaliza por magnitud y no tiene
+ese problema: en las mismas pruebas, consultas relevantes midieron coseno≈0.24-0.33 y
+consultas irrelevantes coseno≈0.38-0.48, con separación estable independiente de la longitud
+de la consulta. Umbral fijado en `MAX_RELEVANT_COSINE_DISTANCE = 0.35`
+([drug_repository.py](../src/infrastructure/repositories/drug_repository.py)) — es una
+heurística calibrada empíricamente para este modelo de embedding, no una garantía: el modelo
+(no especializado en farmacia) no siempre distingue bien fármacos relacionados por mecanismo
+(p. ej. "omeprazol" quedó tan lejos de "esomeprazol" ya cacheado como de fármacos no
+relacionados), en cuyo caso el sistema cae al respaldo de CIMA en vivo — una consulta extra,
+no una respuesta incorrecta.
+
+**Verificación contra servicios reales** (no solo dobles de test): con Postgres/Ollama/CIMA
+reales corriendo, `enalapril` (no cacheado, sí existente en CIMA) devolvió `source: "live"`
+en ~0.76s e indexó 3 resultados; una segunda consulta del mismo fármaco devolvió
+`source: "cache"` en ~0.04s. `amlodipino` y `losartan` probados igual, vía HTTP real
+(`POST /search`, `POST /consult` con `drug_name`) contra el servidor Uvicorn levantado en
+local, con resultado `source: "live"` correcto en ambos. `warfarina` devolvió `source: "none"`
+— CIMA no reconoce ese nombre porque en España se comercializa como "Aldocumar" (confirmado
+consultando CIMA directamente), demostrando el límite real de la búsqueda por nombre literal,
+no un fallo del mecanismo. Una llamada a `/consult` con un fármaco recién indexado en vivo
+degradó `response: ""` la primera vez por el timeout de 60s de `OllamaClient` (arranque en
+frío, comportamiento ya documentado en [BUGS.md](BUGS.md), no relacionado con este cambio) —
+`source: "live"` y `sources` sí llegaron correctamente en esa misma respuesta; una segunda
+llamada con el fármaco ya cacheado generó la respuesta completa sin problema.
+
+**Alcance explícitamente no cubierto**: `/check-interactions` sigue sin consultar CIMA — no
+existe ningún endpoint de CIMA para verificar interacciones entre fármacos (es una base de
+fichas técnicas, no un comprobador de interacciones), así que no había nada que corregir ahí;
+la verificación de interacciones sigue dependiendo exclusivamente de la base curada +
+razonamiento LLM (ver bloque de decisión de BLOQUE D más abajo).
+
+**Verificación**: 114 tests (`pytest`, subieron de 99 con 15 tests nuevos: `test_drug_service.py`,
+`test_pharmacy_agent.py`, casos nuevos en `test_consult_use_case.py` y
+`test_api_endpoints.py`), `ruff check .`/`ruff format --check .` limpios.
+
+---
+
 ## [BLOQUE D] Profesionalización: auth, Docker, orquestación, SafetyCheckAgent híbrido, persistencia, Alembic, evaluación
 
 **Contexto**: tras cerrar [BLOQUE A]/[B]/[C], se pidió una evaluación crítica del proyecto

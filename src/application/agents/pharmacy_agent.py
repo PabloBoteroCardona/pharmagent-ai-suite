@@ -1,4 +1,5 @@
-"""Agente RAG farmacéutico: responde consultas grounded en la caché semántica de fármacos.
+"""Agente RAG farmacéutico: responde consultas grounded en fármacos, con CIMA en vivo
+como respaldo cuando la caché semántica no tiene el dato.
 
 Ver [AGENTS.md](../../../AGENTS.md#3-ragpharmagent) y
 [SKILLS.md](../../../SKILLS.md#3-search_cima_official_data) para el contrato de
@@ -21,11 +22,15 @@ SYSTEM_PROMPT = (
     "sustituyas el criterio médico."
 )
 
-NO_CONTEXT_NOTE = "Contexto: no se encontró ningún medicamento relevante en la caché para esta consulta."
+NO_CONTEXT_NOTE = (
+    "Contexto: no se encontró ningún medicamento relevante ni en la caché local ni en "
+    "CIMA (AEMPS) en vivo para esta consulta."
+)
 
 
 class RAGPharmAgent:
-    """Agente RAG que responde consultas farmacéuticas basándose en la caché semántica de fármacos."""
+    """Agente RAG que responde consultas farmacéuticas: caché semántica primero, CIMA
+    en vivo como respaldo automático si la caché no tiene el fármaco."""
 
     def __init__(
         self, drug_service: DrugService, ollama_client: LanguageModelPort
@@ -33,9 +38,23 @@ class RAGPharmAgent:
         self._drug_service = drug_service
         self._ollama_client = ollama_client
 
-    async def answer_consultation(self, query: str) -> dict:
-        """Responde `query` basándose en los fármacos semánticamente más relevantes de la caché."""
-        context_drugs = await self._drug_service.search_drugs_semantic(query, limit=3)
+    async def answer_consultation(
+        self, query: str, drug_name: str | None = None
+    ) -> dict:
+        """Responde `query` basándose en los fármacos más relevantes de la caché o, si no
+        hay ninguno, en una búsqueda en vivo en CIMA.
+
+        `drug_name`, si se proporciona, se usa como término de búsqueda (en vez de
+        `query`) tanto para la caché como para CIMA en vivo — CIMA solo hace
+        coincidencia por nombre, no búsqueda semántica, así que una pregunta en lenguaje
+        natural (p. ej. "¿qué dosis de ibuprofeno es adecuada?") no siempre encuentra el
+        fármaco en CIMA salvo que se indique su nombre explícitamente.
+        """
+        search_term = drug_name or query
+        search_result = await self._drug_service.search_drugs_semantic(
+            search_term, limit=3
+        )
+        context_drugs = search_result.drugs
 
         if context_drugs:
             context = "\n\n".join(
@@ -56,4 +75,5 @@ class RAGPharmAgent:
             "query": query,
             "response": answer,
             "sources": [drug.nombre for drug in context_drugs],
+            "source": search_result.source,
         }

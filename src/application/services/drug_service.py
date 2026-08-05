@@ -3,12 +3,41 @@
 Orquesta CIMA (fuente primaria en vivo), Ollama (embeddings locales) y
 PostgreSQL/pgvector (caché semántica), según la decisión de arquitectura en
 [DECISIONS.md](../../../.memory/DECISIONS.md).
+
+`search_drugs_semantic` consulta primero la caché vectorial (rápido, sin red externa) y,
+si no hay resultados, cae automáticamente a una búsqueda en vivo en CIMA usando `query`
+como nombre de fármaco — a diferencia del orden "CIMA en vivo primero" descrito en el
+diseño original de SKILLS.md, se prioriza la caché por rendimiento (evita un round-trip a
+CIMA en cada consulta de un fármaco ya conocido) sin sacrificar corrección: si la caché no
+tiene el dato, CIMA en vivo sigue siendo la fuente de verdad consultada antes de devolver
+una respuesta vacía. El resultado de la búsqueda en vivo se indexa automáticamente, así que
+consultas futuras sobre el mismo fármaco son instantáneas. Esto solo funciona cuando
+`query` es (o contiene) un nombre reconocible por la búsqueda de CIMA (coincidencia por
+nombre, no semántica) — una pregunta en lenguaje natural sin nombre de fármaco identificable
+seguirá sin encontrar nada en el paso de CIMA en vivo.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
 from src.domain.ports import CimaDataSourcePort, DrugRepositoryPort, LanguageModelPort
 from src.infrastructure.models import DrugModel
+
+# Al caer al respaldo de CIMA en vivo (caché sin resultados), se indexan como máximo
+# estos fármacos aunque `limit` sea mayor — cada uno implica 2 llamadas HTTP a CIMA +
+# 1 a Ollama (embedding) + 1 escritura en Postgres, secuenciales; limitarlo mantiene la
+# latencia de una búsqueda "en frío" razonable (mismo criterio que scripts/ingest_drugs.py,
+# 3 resultados por término).
+LIVE_FALLBACK_MAX_RESULTS = 3
+
+
+@dataclass
+class DrugSearchResult:
+    """Resultado de `search_drugs_semantic`, con la procedencia de los datos."""
+
+    drugs: list[DrugModel] = field(default_factory=list)
+    source: str = "none"  # "cache" | "live" | "none"
 
 
 class DrugService:
@@ -57,9 +86,36 @@ class DrugService:
 
     async def search_drugs_semantic(
         self, query: str, limit: int = 5
-    ) -> list[DrugModel]:
-        """Busca los fármacos cacheados semánticamente más similares a `query`."""
+    ) -> DrugSearchResult:
+        """Busca fármacos relevantes para `query`: primero en la caché vectorial y, si no
+        hay resultados, en vivo en CIMA (ver docstring del módulo)."""
         embedding = await self._ollama_client.generate_embedding(query)
-        if not embedding:
-            return []
-        return await self._drug_repo.search_similar_by_vector(embedding, limit=limit)
+        cached = (
+            await self._drug_repo.search_similar_by_vector(embedding, limit=limit)
+            if embedding
+            else []
+        )
+        if cached:
+            return DrugSearchResult(drugs=cached, source="cache")
+
+        live_drugs = await self._search_and_index_live(
+            query, limit=min(limit, LIVE_FALLBACK_MAX_RESULTS)
+        )
+        if live_drugs:
+            return DrugSearchResult(drugs=live_drugs, source="live")
+
+        return DrugSearchResult(drugs=[], source="none")
+
+    async def _search_and_index_live(self, name: str, limit: int) -> list[DrugModel]:
+        """Busca `name` en vivo en CIMA y persiste/indexa los primeros `limit` resultados."""
+        resultados = await self._cima_client.search_medicamentos(name)
+
+        indexed: list[DrugModel] = []
+        for medicamento in resultados[:limit]:
+            nregistro = medicamento.get("nregistro")
+            if not nregistro:
+                continue
+            drug = await self.fetch_and_index_drug(nregistro)
+            if drug is not None:
+                indexed.append(drug)
+        return indexed

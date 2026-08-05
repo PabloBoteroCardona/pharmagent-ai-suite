@@ -16,6 +16,6 @@ class ConsultDrugRAGUseCase:
     def __init__(self, rag_agent: RAGPharmAgent) -> None:
         self._rag_agent = rag_agent
 
-    async def execute(self, query: str) -> dict:
-        """Ejecuta la consulta y devuelve `{"query", "response", "sources"}`."""
-        return await self._rag_agent.answer_consultation(query)
+    async def execute(self, query: str, drug_name: str | None = None) -> dict:
+        """Ejecuta la consulta y devuelve `{"query", "response", "sources", "source"}`."""
+        return await self._rag_agent.answer_consultation(query, drug_name=drug_name)

@@ -14,12 +14,47 @@ class DrugSearchQuery(BaseModel):
     limit: int = Field(default=5, ge=1, le=50)
 
 
+class DrugSearchResultItem(BaseModel):
+    """Un fármaco encontrado por `POST /search`."""
+
+    model_config = ConfigDict(strict=True)
+
+    nregistro: str
+    nombre: str
+    pactivos: str | None = None
+    labtitular: str | None = None
+
+
+class DrugSearchResponse(BaseModel):
+    """Respuesta de `POST /search`, con la procedencia de los resultados."""
+
+    model_config = ConfigDict(strict=True)
+
+    results: list[DrugSearchResultItem] = Field(default_factory=list)
+    source: str = Field(
+        description=(
+            "'cache' si los resultados vinieron de la caché vectorial local; 'live' si "
+            "no había nada en caché y se consultó CIMA en vivo (y se indexó para "
+            "consultas futuras); 'none' si tampoco CIMA en vivo encontró nada."
+        )
+    )
+
+
 class ConsultationRequest(BaseModel):
     """Petición de consulta en lenguaje natural al `RAGPharmAgent`."""
 
     model_config = ConfigDict(strict=True)
 
     query: str = Field(..., min_length=1)
+    drug_name: str | None = Field(
+        default=None,
+        description=(
+            "Nombre del medicamento a buscar, si se conoce. CIMA hace coincidencia por "
+            "nombre, no búsqueda semántica: indicarlo mejora la probabilidad de "
+            "encontrarlo en vivo cuando no está en la caché y `query` es una pregunta "
+            "en lenguaje natural sin el nombre del fármaco de forma literal."
+        ),
+    )
 
 
 class ConsultationResponse(BaseModel):
@@ -30,6 +65,10 @@ class ConsultationResponse(BaseModel):
     query: str
     response: str
     sources: list[str] = Field(default_factory=list)
+    source: str = Field(
+        default="none",
+        description="'cache' | 'live' | 'none' — ver DrugSearchResponse.source.",
+    )
 
 
 class ExtractedDrugItem(BaseModel):

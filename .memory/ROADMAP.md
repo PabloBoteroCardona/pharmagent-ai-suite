@@ -182,13 +182,33 @@ completo y verificación en [DECISIONS.md](DECISIONS.md).
 - Verificado: 99 tests (`pytest`) verdes, `ruff check .`/`ruff format --check .` limpios,
   cobertura 87%, evaluación cuantitativa con resultados reales, Docker end-to-end.
 
+## CIMA en vivo como respaldo real de `/search` y `/consult` — ✅ completado
+
+Corrección posterior a [BLOQUE D], a petición del usuario tras confirmar que
+`/search`/`/consult` solo miraban la caché local (12 fármacos pre-cargados) y nunca CIMA en
+vivo. Detalle completo en [DECISIONS.md](DECISIONS.md).
+
+- `DrugService.search_drugs_semantic` devuelve `DrugSearchResult(drugs, source)`: caché
+  primero, respaldo automático en CIMA en vivo si no hay resultados relevantes, indexando lo
+  encontrado para consultas futuras.
+- `RAGPharmAgent`/`ConsultDrugRAGUseCase` ganaron `drug_name` opcional (CIMA es coincidencia
+  literal de nombre, no búsqueda semántica).
+- `POST /search` y `POST /consult` exponen `source: "cache"|"live"|"none"`.
+- **Bug real corregido**: el umbral de relevancia de caché usaba `pgvector.l2_distance`,
+  sensible a la longitud del texto (rompía el cache hit incluso del propio fármaco recién
+  indexado); corregido a `cosine_distance` con umbral calibrado empíricamente (0.35).
+- Verificado contra CIMA/Ollama/Postgres reales (no dobles): fallback en vivo, indexación
+  automática, cache hit posterior, y el límite conocido de nombres no reconocidos por CIMA
+  (`warfarina` vs. `Aldocumar`).
+- 114 tests (`pytest`, +15 nuevos), `ruff check .`/`ruff format --check .` limpios.
+
 ## Fases futuras
 
 Sin detallar todavía — pendientes de definición (despliegue en un entorno remoto, entidad de
 dominio `Drug` desacoplada del ORM, ampliación de la base curada de interacciones de
 `SafetyCheckAgent` más allá de 6 pares, *fallback* a Gemini remoto para `SafetyCheckAgent`
-cuando Ollama no esté disponible, `RAGPharmAgent` con CIMA en vivo por petición además de la
-caché, normalización de `PrescriptionAgent` a la entidad de dominio `Prescription` pura,
-orquestación de los 3 agentes vía Google ADK real, distinguir explícitamente en
-`SafetyCheckAgent` entre "el LLM no encontró interacciones" y "el LLM no respondió/timeout"
-— ver limitación señalada en EVALUATION.md).
+cuando Ollama no esté disponible, normalización de `PrescriptionAgent` a la entidad de
+dominio `Prescription` pura, orquestación de los 3 agentes vía Google ADK real, distinguir
+explícitamente en `SafetyCheckAgent` entre "el LLM no encontró interacciones" y "el LLM no
+respondió/timeout" — ver limitación señalada en EVALUATION.md, normalización de nombres
+comerciales/genéricos para mejorar la tasa de aciertos del respaldo de CIMA en vivo).

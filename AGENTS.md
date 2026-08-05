@@ -167,24 +167,41 @@ medicamentos (AEMPS/CIMA) mediante *Retrieval-Augmented Generation*.
 | **Ubicación real** | [`src/application/agents/pharmacy_agent.py`](src/application/agents/pharmacy_agent.py) (`RAGPharmAgent`), orquestado por [`ConsultDrugRAGUseCase`](src/use_cases/consult_drug_rag.py) |
 | **Puerto de dominio** | `LanguageModelPort` (generación/embeddings) + `DrugService` (aplicación) sobre `CimaDataSourcePort`/`DrugRepositoryPort` ([drug_ports.py](src/domain/ports/drug_ports.py)) |
 | **Endpoint REST** | `POST /api/v1/pharmacy/consult` en `pharmacy_router.py` |
-| **Fuente de recuperación real** | **Solo la caché vectorial local** (`pgvector`, vía `DrugService.search_drugs_semantic`) — **corrección importante sobre el diseño original**: `/consult` no consulta CIMA en vivo en el momento de la pregunta. CIMA en vivo se consulta únicamente durante la **ingesta por lotes** (`scripts/ingest_drugs.py` → `DrugService.fetch_and_index_drug`), que puebla la caché de antemano. La estrategia dual "CIMA en vivo primero, caché como *fallback*" descrita más abajo es el diseño objetivo, no el comportamiento actual. |
-| **Modo de ejecución** | 100% local en el momento de la consulta (generación + recuperación); la actualización de la caché desde CIMA es un proceso separado y asíncrono respecto a la consulta del usuario |
+| **Fuente de recuperación real** | **Caché vectorial local primero, CIMA en vivo como respaldo automático** (`DrugService.search_drugs_semantic`) — implementado como corrección posterior (ver [.memory/DECISIONS.md](.memory/DECISIONS.md), corrección de "consulta sobre un medicamento no encontraba nada si no estaba pre-cargado"). Si la caché no tiene un resultado suficientemente relevante, `DrugService` consulta `CimaAPIClient.search_medicamentos` en vivo, indexa automáticamente los primeros resultados (embedding + persistencia) y los devuelve — consultas futuras sobre el mismo fármaco son entonces instantáneas (cache hit). Se prioriza caché-primero sobre CIMA-primero (orden invertido respecto al diseño original de SKILLS.md) por rendimiento: evita un *round-trip* a CIMA en cada consulta de un fármaco ya conocido, sin sacrificar corrección. |
+| **Modo de ejecución** | Local en el caso más común (fármaco ya cacheado); remoto (CIMA) solo la primera vez que se pregunta por un fármaco nuevo — latencia medida ~0.1-1.3s para la búsqueda en vivo (ver verificación abajo), más la generación de Ollama. |
 
 ### Responsabilidades
-- Recibir la pregunta del usuario (profesional sanitario o paciente) sobre un medicamento.
-- Recuperar los 3 fármacos semánticamente más similares de la caché vectorial local
-  (`DrugService.search_drugs_semantic`, embedding de la consulta + `pgvector.l2_distance`).
+- Recibir la pregunta del usuario (profesional sanitario o paciente) sobre un medicamento,
+  y opcionalmente el nombre del fármaco (`drug_name`) para acotar la búsqueda.
+- Recuperar los fármacos relevantes vía `DrugService.search_drugs_semantic`: primero contra
+  la caché vectorial (embedding de `drug_name` o `query` + `pgvector.cosine_distance`,
+  filtrado por un umbral de relevancia — ver nota sobre la métrica más abajo); si no hay
+  resultados relevantes, busca en vivo en CIMA por nombre y los indexa.
 - Generar una respuesta **basada exclusivamente en los fragmentos recuperados** (nombre,
   principios activos, prospecto) vía el `system_prompt` grounded de `OllamaClient`.
-- Si la caché no devuelve ningún fármaco relevante, el `system_prompt` indica explícitamente
-  la ausencia de contexto en lugar de generar una respuesta no fundamentada — pero, a
-  diferencia del diseño objetivo, no hay un campo `grounded: bool` explícito en la salida
-  todavía; la ausencia de fuentes se refleja solo en `sources: []`.
+- Si ni la caché ni CIMA en vivo devuelven nada relevante, el `system_prompt` indica
+  explícitamente la ausencia de contexto — la salida además expone `source: "cache"|"live"|"none"`
+  para que el consumidor sepa la procedencia (ver "Entradas/salidas" abajo); sigue sin haber
+  un campo `grounded: bool` explícito como en el diseño objetivo.
 
-**Diseño objetivo pendiente** (`search_cima_official_data`, dos fuentes con CIMA en vivo como
-primaria por consulta): requeriría que `RAGPharmAgent`/`DrugService` invoquen
-`CimaAPIClient` de forma síncrona a la consulta del usuario, no solo en la ingesta — fuera de
-alcance de los bloques ejecutados hasta ahora.
+**Nota sobre la métrica de relevancia**: la caché usa distancia coseno (no L2, usada
+originalmente) — se comprobó empíricamente contra la caché real del proyecto que L2 es
+sensible a la longitud del texto comparado, no solo a su contenido semántico (una consulta
+de una palabra queda artificialmente lejos incluso del fármaco exacto que describe), lo que
+haría casi imposible un cache hit real. Ver comentario extenso en
+[drug_repository.py](src/infrastructure/repositories/drug_repository.py). El umbral
+(`MAX_RELEVANT_COSINE_DISTANCE = 0.35`) es una heurística calibrada con `nomic-embed-text`,
+no una garantía: el modelo (no especializado en farmacia) a veces no distingue bien fármacos
+relacionados por mecanismo (p. ej. "omeprazol" vs. "esomeprazol" ya cacheado) — en esos
+casos el sistema cae al respaldo de CIMA en vivo en vez de acertar con el cache hit, lo cual
+es un comportamiento aceptable (una consulta extra a CIMA), no una respuesta incorrecta.
+
+**Búsqueda en vivo por nombre, no semántica**: CIMA hace coincidencia literal de nombre
+(`search_medicamentos`), no búsqueda semántica — una pregunta en lenguaje natural sin el
+nombre del fármaco de forma literal (p. ej. "¿qué tomar para el dolor de cabeza?") no
+encontrará nada en CIMA aunque exista un fármaco relevante. Por eso `drug_name` existe como
+parámetro separado de `query`: acota la búsqueda al nombre exacto cuando se conoce, mientras
+`query` sigue siendo la pregunta real enviada al LLM para generar la respuesta.
 
 ### Principio rector (equivalente al prompt de sistema del diseño original)
 > Responde únicamente con la información técnica del contexto recuperado (nombre, principios
@@ -196,12 +213,13 @@ alcance de los bloques ejecutados hasta ahora.
 > texto exacto usado en producción.
 
 ### Entradas / salidas
-- **Entrada real**: `query: str` (`ConsultationRequest`). `drug_name`/`nregistro` para acotar
-  la búsqueda **no están implementados** — la recuperación siempre es semántica sobre toda la
-  caché.
-- **Salida real**: `{"query", "response", "sources": [nombre_farmaco, ...]}`
-  (`ConsultationResponse`) — más simple que el `RAGAnswer` objetivo: `sources` es una lista de
-  nombres, no de fragmentos con metadatos, y no hay campo `grounded: bool` explícito.
+- **Entrada real**: `query: str` + `drug_name: str | None` (`ConsultationRequest`) — `drug_name`
+  sí está implementado (a diferencia de versiones anteriores de este documento); `nregistro`
+  para acotar por número de registro exacto sigue sin implementarse.
+- **Salida real**: `{"query", "response", "sources": [nombre_farmaco, ...], "source":
+  "cache"|"live"|"none"}` (`ConsultationResponse`) — más simple que el `RAGAnswer` objetivo:
+  `sources` es una lista de nombres, no de fragmentos con metadatos, y `source` (procedencia
+  agregada) sustituye al `grounded: bool` explícito del diseño objetivo sin ser equivalente.
 - Consumido por [`ConsultDrugRAGUseCase`](src/use_cases/consult_drug_rag.py) (caso de uso
   real, sí implementado, a diferencia del nombre `answer_pharma_query.py` del diseño
   original).
@@ -214,8 +232,23 @@ alcance de los bloques ejecutados hasta ahora.
 - Las llamadas en vivo a CIMA (`CimaAPIClient`) quedan restringidas exclusivamente al dominio
   oficial `cima.aemps.es` (`settings.cima_base_url`, no parametrizable desde la entrada de
   ningún endpoint).
-- La caché vectorial se alimenta únicamente desde el script de ingesta
-  (`scripts/ingest_drugs.py`), nunca desde la generación del propio LLM.
+- La caché vectorial se alimenta desde el script de ingesta por lotes
+  (`scripts/ingest_drugs.py`) **y** automáticamente desde el respaldo en vivo de
+  `DrugService.search_drugs_semantic` — en ambos casos, el contenido persistido procede
+  siempre de CIMA, nunca de la generación del propio LLM.
+
+### Verificación
+Comportamiento verificado end-to-end contra CIMA/Ollama/Postgres reales (no dobles de
+test): `enalapril` (fármaco no cacheado, sí existente en CIMA) devolvió `source: "live"` en
+~0.76s, indexándose automáticamente; una segunda consulta del mismo fármaco devolvió
+`source: "cache"` en ~0.04s. `warfarina` (nombre no reconocido por la búsqueda literal de
+CIMA — en España se comercializa como "Aldocumar") devolvió `source: "none"`, confirmando
+que el respaldo depende de que CIMA reconozca el nombre exacto, no es una garantía universal.
+`POST /consult` con `drug_name="losartan"` probado vía HTTP real: primera llamada degradó
+`response: ""` por el timeout de 60s de `OllamaClient` (arranque en frío, comportamiento ya
+documentado en [BUGS.md](.memory/BUGS.md), no un fallo del respaldo en vivo — `source: "live"`
+y `sources` sí llegaron correctamente); segunda llamada con el fármaco ya cacheado generó una
+respuesta completa citando los 3 medicamentos de losartán encontrados.
 
 ---
 
