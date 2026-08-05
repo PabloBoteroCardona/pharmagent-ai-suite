@@ -16,6 +16,7 @@ from src.infrastructure.api.schemas.drug_schemas import (
     InteractionCheckRequest,
     InteractionCheckResponse,
     PrescriptionAnalysisResponse,
+    ProcessPrescriptionResponse,
 )
 from src.infrastructure.api.security import verify_api_key
 from src.infrastructure.database import get_db_session
@@ -24,6 +25,7 @@ from src.infrastructure.external.gemini_client import GeminiClient
 from src.infrastructure.external.ollama_client import OllamaClient
 from src.infrastructure.repositories import DrugRepository
 from src.use_cases.consult_drug_rag import ConsultDrugRAGUseCase
+from src.use_cases.process_prescription import ProcessPrescriptionUseCase
 
 router = APIRouter(
     prefix="/api/v1/pharmacy",
@@ -81,8 +83,19 @@ def get_prescription_agent(
     return PrescriptionAgent(vision_client=gemini_client)
 
 
-def get_safety_check_agent() -> SafetyCheckAgent:
-    return SafetyCheckAgent()
+def get_safety_check_agent(
+    ollama_client: OllamaClient = Depends(get_ollama_client),  # noqa: B008
+) -> SafetyCheckAgent:
+    return SafetyCheckAgent(language_model=ollama_client)
+
+
+def get_process_prescription_use_case(
+    prescription_agent: PrescriptionAgent = Depends(get_prescription_agent),  # noqa: B008
+    safety_agent: SafetyCheckAgent = Depends(get_safety_check_agent),  # noqa: B008
+) -> ProcessPrescriptionUseCase:
+    return ProcessPrescriptionUseCase(
+        prescription_agent=prescription_agent, safety_agent=safety_agent
+    )
 
 
 @router.post("/search")
@@ -128,5 +141,21 @@ async def check_interactions(
     payload: InteractionCheckRequest,
     agent: SafetyCheckAgent = Depends(get_safety_check_agent),  # noqa: B008
 ) -> InteractionCheckResponse:
-    result = agent.check_interactions(payload.drugs)
+    result = await agent.check_interactions(payload.drugs)
     return InteractionCheckResponse(**result)
+
+
+@router.post("/process-prescription", response_model=ProcessPrescriptionResponse)
+async def process_prescription(
+    file: UploadFile = File(...),  # noqa: B008
+    use_case: ProcessPrescriptionUseCase = Depends(  # noqa: B008
+        get_process_prescription_use_case
+    ),
+) -> ProcessPrescriptionResponse:
+    """Flujo completo: extrae los fármacos de la imagen de la receta y, si hay 2 o más,
+    verifica automáticamente sus interacciones conocidas."""
+    image_bytes = await file.read()
+    result = await use_case.execute(
+        image_bytes, mime_type=file.content_type or "image/jpeg"
+    )
+    return ProcessPrescriptionResponse(**result)

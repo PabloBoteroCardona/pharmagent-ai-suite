@@ -70,6 +70,14 @@ class InteractionResult(BaseModel):
     severity: str
     description: str
     clinical_recommendation: str
+    source: str = Field(
+        default="curated",
+        description=(
+            "'curated' si procede de la base curada interna (autoritativa); 'llm' si "
+            "procede del razonamiento del modelo de lenguaje local para una combinación "
+            "no cubierta por la base curada — ver AGENTS.md."
+        ),
+    )
 
 
 class InteractionCheckResponse(BaseModel):
@@ -79,3 +87,19 @@ class InteractionCheckResponse(BaseModel):
 
     interactions: list[InteractionResult] = Field(default_factory=list)
     verdict: str
+
+
+class ProcessPrescriptionResponse(BaseModel):
+    """Respuesta del flujo completo receta → extracción → interacciones
+    (`ProcessPrescriptionUseCase`)."""
+
+    model_config = ConfigDict(strict=True)
+
+    prescription: PrescriptionAnalysisResponse
+    safety_check: InteractionCheckResponse | None = Field(
+        default=None,
+        description=(
+            "None si la extracción no identificó al menos 2 fármacos — sin un segundo "
+            "fármaco no hay interacción posible que verificar."
+        ),
+    )

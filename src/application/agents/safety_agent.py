@@ -4,15 +4,29 @@ Ver [AGENTS.md](../../../AGENTS.md#2-safetycheckagent) para el contrato de
 comportamiento. Usa la entidad de dominio `DrugInteraction`
 ([drug_interaction.py](../../domain/models/drug_interaction.py)).
 
-Limitación aceptada: `_KNOWN_INTERACTIONS` es una base curada mínima, en memoria, con
-fines demostrativos (TFM) — no sustituye una base de datos de interacciones clínica
-completa (p. ej. un servicio externo curado). Ampliar esta base o sustituirla por una
-fuente real queda fuera de alcance de este bloque.
+Diseño híbrido: la base curada (`_KNOWN_INTERACTIONS`) es la fuente **autoritativa** —
+si cubre la combinación de fármacos dada, su resultado se devuelve tal cual y nunca se
+consulta al modelo de lenguaje. Solo cuando ningún par de la base curada aplica, y se ha
+inyectado un `LanguageModelPort` (Ollama local, nunca un proveedor externo — ver
+[DECISIONS.md](../../../.memory/DECISIONS.md)), el agente consulta al modelo para razonar
+sobre combinaciones no cubiertas. La respuesta del modelo nunca puede contradecir ni
+sustituir a la base curada, solo complementarla; cada interacción devuelta lleva un campo
+`source` (`"curated"` / `"llm"`) para que el consumidor distinga el nivel de confianza. Ante
+un fallo de parseo o incertidumbre explícita del modelo, el veredicto por defecto es
+`requiere_revision_medica` — nunca una aprobación silenciosa (ver AGENTS.md).
+
+Limitación aceptada: `_KNOWN_INTERACTIONS` es una base curada mínima, con fines
+demostrativos (TFM) — no sustituye una base de datos de interacciones clínica completa. El
+razonamiento del LLM sobre combinaciones no cubiertas es un mecanismo de asistencia, no una
+fuente clínica verificada — no hay *grounding* en una base de datos real para ese camino.
 """
 
 from __future__ import annotations
 
+import json
+
 from src.domain.models.drug_interaction import DrugInteraction, InteractionSeverity
+from src.domain.ports import LanguageModelPort
 
 _KNOWN_INTERACTIONS: tuple[DrugInteraction, ...] = (
     DrugInteraction(
@@ -93,38 +107,126 @@ _KNOWN_INTERACTIONS: tuple[DrugInteraction, ...] = (
 )
 
 _REVIEW_SEVERITIES = frozenset({InteractionSeverity.HIGH, InteractionSeverity.SEVERE})
+_REVIEW_SEVERITY_VALUES = frozenset(severity.value for severity in _REVIEW_SEVERITIES)
+_VALID_SEVERITY_VALUES = frozenset(severity.value for severity in InteractionSeverity)
+
+_REQUIRED_ENTRY_FIELDS = (
+    "primary_drug",
+    "secondary_drug",
+    "description",
+    "clinical_recommendation",
+)
+
+LLM_SYSTEM_PROMPT = (
+    "Eres un sistema de verificación de seguridad farmacológica. Tu prioridad absoluta es "
+    "la seguridad del paciente sobre la conveniencia. Se te da una lista de fármacos que no "
+    "coincide con ninguna interacción de la base curada interna. Analiza si existe alguna "
+    "interacción farmacológica clínicamente relevante y conocida entre ellos, basándote "
+    "únicamente en conocimiento farmacológico establecido — nunca inventes ni extrapoles una "
+    "interacción de la que no tengas certeza razonable. Responde EXCLUSIVAMENTE con un JSON, "
+    'sin texto adicional, con esta forma exacta: {"interactions": [{"primary_drug": string, '
+    '"secondary_drug": string, "severity": "LOW"|"MEDIUM"|"HIGH"|"SEVERE", '
+    '"description": string, "clinical_recommendation": string}], "uncertain": boolean}. '
+    'Fija "uncertain": true si no tienes evidencia farmacológica suficiente para '
+    "pronunciarte con confianza sobre alguno de los fármacos listados; en ese caso el "
+    "sistema tratará el caso como pendiente de revisión médica, así que no marques "
+    "`uncertain` solo por prudencia excesiva si realmente conoces la respuesta."
+)
 
 
 class SafetyCheckAgent:
-    """Verifica interacciones farmacológicas conocidas entre una lista de fármacos."""
+    """Verifica interacciones farmacológicas: base curada (autoritativa) + LLM local
+    opcional para combinaciones no cubiertas por la base curada."""
 
     def __init__(
-        self, known_interactions: tuple[DrugInteraction, ...] = _KNOWN_INTERACTIONS
+        self,
+        known_interactions: tuple[DrugInteraction, ...] = _KNOWN_INTERACTIONS,
+        language_model: LanguageModelPort | None = None,
     ) -> None:
         self._known_interactions = known_interactions
+        self._language_model = language_model
 
-    def check_interactions(self, drug_names: list[str]) -> dict:
-        """Evalúa `drug_names` contra la base curada y devuelve interacciones + veredicto."""
+    async def check_interactions(self, drug_names: list[str]) -> dict:
+        """Evalúa `drug_names`: primero contra la base curada; si no aplica ninguna y hay
+        un modelo de lenguaje configurado, consulta al modelo. Devuelve
+        `{"interactions": [...], "verdict": ...}`."""
         normalized = [name.strip().lower() for name in drug_names if name.strip()]
-        found = [
+
+        curated_found = [
             interaction
             for interaction in self._known_interactions
             if self._interaction_applies(interaction, normalized)
         ]
+        if curated_found:
+            return {
+                "interactions": [
+                    self._serialize_curated(interaction)
+                    for interaction in curated_found
+                ],
+                "verdict": self._determine_curated_verdict(curated_found),
+            }
 
-        return {
-            "interactions": [
-                {
-                    "primary_drug": interaction.primary_drug,
-                    "secondary_drug": interaction.secondary_drug,
-                    "severity": interaction.severity.value,
-                    "description": interaction.description,
-                    "clinical_recommendation": interaction.clinical_recommendation,
-                }
-                for interaction in found
-            ],
-            "verdict": self._determine_verdict(found),
-        }
+        if self._language_model is not None and len(normalized) >= 2:
+            return await self._check_with_language_model(drug_names)
+
+        return {"interactions": [], "verdict": "apto"}
+
+    async def _check_with_language_model(self, drug_names: list[str]) -> dict:
+        prompt = "Fármacos a evaluar: " + ", ".join(drug_names)
+        raw_response = await self._language_model.generate_completion(
+            prompt=prompt, system=LLM_SYSTEM_PROMPT
+        )
+        parsed = self._parse_llm_response(raw_response)
+
+        if parsed is None:
+            # Fallo de parseo (respuesta vacía, JSON inválido o forma inesperada): sin
+            # evidencia interpretable, se trata como incertidumbre — nunca como "apto".
+            return {"interactions": [], "verdict": "requiere_revision_medica"}
+
+        entries, uncertain = parsed
+        serialized = [self._serialize_llm_entry(entry) for entry in entries]
+
+        if uncertain:
+            return {"interactions": serialized, "verdict": "requiere_revision_medica"}
+        if not entries:
+            return {"interactions": [], "verdict": "apto"}
+
+        severities_found = {entry["severity"] for entry in entries}
+        verdict = (
+            "requiere_revision_medica"
+            if severities_found & _REVIEW_SEVERITY_VALUES
+            else "apto_con_precaucion"
+        )
+        return {"interactions": serialized, "verdict": verdict}
+
+    @staticmethod
+    def _parse_llm_response(raw_response: str) -> tuple[list[dict], bool] | None:
+        try:
+            data = json.loads(raw_response)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(data, dict):
+            return None
+
+        raw_entries = data.get("interactions", [])
+        if not isinstance(raw_entries, list):
+            return None
+
+        valid_entries = [
+            entry for entry in raw_entries if SafetyCheckAgent._is_valid_entry(entry)
+        ]
+        return valid_entries, bool(data.get("uncertain", False))
+
+    @staticmethod
+    def _is_valid_entry(entry: object) -> bool:
+        if not isinstance(entry, dict):
+            return False
+        if entry.get("severity") not in _VALID_SEVERITY_VALUES:
+            return False
+        return all(
+            isinstance(entry.get(field), str) and entry.get(field)
+            for field in _REQUIRED_ENTRY_FIELDS
+        )
 
     @staticmethod
     def _interaction_applies(
@@ -139,9 +241,29 @@ class SafetyCheckAgent:
         return primary_present and secondary_present
 
     @staticmethod
-    def _determine_verdict(found: list[DrugInteraction]) -> str:
-        if not found:
-            return "apto"
+    def _determine_curated_verdict(found: list[DrugInteraction]) -> str:
         if any(interaction.severity in _REVIEW_SEVERITIES for interaction in found):
             return "requiere_revision_medica"
         return "apto_con_precaucion"
+
+    @staticmethod
+    def _serialize_curated(interaction: DrugInteraction) -> dict:
+        return {
+            "primary_drug": interaction.primary_drug,
+            "secondary_drug": interaction.secondary_drug,
+            "severity": interaction.severity.value,
+            "description": interaction.description,
+            "clinical_recommendation": interaction.clinical_recommendation,
+            "source": "curated",
+        }
+
+    @staticmethod
+    def _serialize_llm_entry(entry: dict) -> dict:
+        return {
+            "primary_drug": entry["primary_drug"],
+            "secondary_drug": entry["secondary_drug"],
+            "severity": entry["severity"],
+            "description": entry["description"],
+            "clinical_recommendation": entry["clinical_recommendation"],
+            "source": "llm",
+        }

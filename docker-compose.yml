@@ -24,6 +24,25 @@ services:
     volumes:
       - ollama_data:/root/.ollama
 
+  api:
+    build: .
+    container_name: pharmagent_api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Dentro de la red de Docker Compose los servicios se resuelven por nombre, no por
+      # localhost/127.0.0.1 ni por el puerto publicado al host — se sobrescriben aquí los
+      # valores de `.env` (pensados para ejecutar la API fuera de Docker).
+      DATABASE_URL: postgresql+asyncpg://pharmagent:pharmagent_pass@postgres:5432/pharmagent_db
+      OLLAMA_BASE_URL: http://ollama:11434
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+
 volumes:
   postgres_data:
   ollama_data:

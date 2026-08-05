@@ -1,57 +1,86 @@
-"""Tests unitarios de `SafetyCheckAgent` (interacciones farmacológicas conocidas)."""
+"""Tests unitarios de `SafetyCheckAgent` (interacciones farmacológicas conocidas +
+razonamiento LLM opcional para combinaciones no cubiertas por la base curada)."""
 
 from __future__ import annotations
+
+import json
+
+import pytest
 
 from src.application.agents.safety_agent import SafetyCheckAgent
 from src.domain.models.drug_interaction import DrugInteraction, InteractionSeverity
 
 
-class TestSafetyCheckAgent:
-    def test_detects_severe_interaction_requires_medical_review(self) -> None:
+class FakeLanguageModel:
+    """Doble de `LanguageModelPort` que devuelve una respuesta fija a `generate_completion`."""
+
+    def __init__(self, completion_response: str) -> None:
+        self._completion_response = completion_response
+        self.received_prompts: list[tuple[str, str]] = []
+
+    async def generate_embedding(self, text: str) -> list[float]:
+        raise NotImplementedError
+
+    async def generate_completion(self, prompt: str, system: str = "") -> str:
+        self.received_prompts.append((prompt, system))
+        return self._completion_response
+
+
+class TestSafetyCheckAgentCuratedTable:
+    @pytest.mark.asyncio
+    async def test_detects_severe_interaction_requires_medical_review(self) -> None:
         agent = SafetyCheckAgent()
 
-        result = agent.check_interactions(["Warfarina 5mg", "Aspirina 100mg"])
+        result = await agent.check_interactions(["Warfarina 5mg", "Aspirina 100mg"])
 
         assert result["verdict"] == "requiere_revision_medica"
         assert len(result["interactions"]) == 1
         assert result["interactions"][0]["severity"] == "SEVERE"
+        assert result["interactions"][0]["source"] == "curated"
 
-    def test_detects_medium_interaction_fit_with_caution(self) -> None:
+    @pytest.mark.asyncio
+    async def test_detects_medium_interaction_fit_with_caution(self) -> None:
         agent = SafetyCheckAgent()
 
-        result = agent.check_interactions(["Ibuprofeno", "Aspirina"])
+        result = await agent.check_interactions(["Ibuprofeno", "Aspirina"])
 
         assert result["verdict"] == "apto_con_precaucion"
         assert len(result["interactions"]) == 1
         assert result["interactions"][0]["severity"] == "MEDIUM"
 
-    def test_no_known_interaction_is_fit(self) -> None:
+    @pytest.mark.asyncio
+    async def test_no_known_interaction_and_no_llm_configured_is_fit(self) -> None:
         agent = SafetyCheckAgent()
 
-        result = agent.check_interactions(["Paracetamol", "Omeprazol"])
+        result = await agent.check_interactions(["Paracetamol", "Omeprazol"])
 
         assert result["verdict"] == "apto"
         assert result["interactions"] == []
 
-    def test_matching_is_case_insensitive_and_substring_based(self) -> None:
+    @pytest.mark.asyncio
+    async def test_matching_is_case_insensitive_and_substring_based(self) -> None:
         agent = SafetyCheckAgent()
 
-        result = agent.check_interactions(
+        result = await agent.check_interactions(
             ["WARFARINA Sódica 5 MG", "  Aspirina Infantil  "]
         )
 
         assert result["verdict"] == "requiere_revision_medica"
         assert len(result["interactions"]) == 1
 
-    def test_severe_interaction_never_downgraded_by_extra_safe_drug(self) -> None:
+    @pytest.mark.asyncio
+    async def test_severe_interaction_never_downgraded_by_extra_safe_drug(self) -> None:
         agent = SafetyCheckAgent()
 
-        result = agent.check_interactions(["Fluoxetina", "Tramadol", "Paracetamol"])
+        result = await agent.check_interactions(
+            ["Fluoxetina", "Tramadol", "Paracetamol"]
+        )
 
         assert result["verdict"] == "requiere_revision_medica"
         assert any(i["severity"] == "SEVERE" for i in result["interactions"])
 
-    def test_uses_injected_known_interactions(self) -> None:
+    @pytest.mark.asyncio
+    async def test_uses_injected_known_interactions(self) -> None:
         custom_interaction = DrugInteraction(
             primary_drug="drogax",
             secondary_drug="drogay",
@@ -61,7 +90,160 @@ class TestSafetyCheckAgent:
         )
         agent = SafetyCheckAgent(known_interactions=(custom_interaction,))
 
-        result = agent.check_interactions(["DrogaX", "DrogaY"])
+        result = await agent.check_interactions(["DrogaX", "DrogaY"])
 
         assert result["verdict"] == "apto_con_precaucion"
         assert result["interactions"][0]["primary_drug"] == "drogax"
+
+    @pytest.mark.asyncio
+    async def test_curated_match_never_consults_language_model(self) -> None:
+        language_model = FakeLanguageModel(completion_response='{"interactions": []}')
+        agent = SafetyCheckAgent(language_model=language_model)
+
+        await agent.check_interactions(["Warfarina", "Aspirina"])
+
+        assert language_model.received_prompts == []
+
+
+class TestSafetyCheckAgentLLMAssisted:
+    @pytest.mark.asyncio
+    async def test_no_language_model_configured_defaults_to_fit_for_unknown_pair(
+        self,
+    ) -> None:
+        agent = SafetyCheckAgent(language_model=None)
+
+        result = await agent.check_interactions(["FarmacoX", "FarmacoY"])
+
+        assert result == {"interactions": [], "verdict": "apto"}
+
+    @pytest.mark.asyncio
+    async def test_llm_reports_no_interaction_is_fit(self) -> None:
+        language_model = FakeLanguageModel(
+            completion_response=json.dumps({"interactions": [], "uncertain": False})
+        )
+        agent = SafetyCheckAgent(language_model=language_model)
+
+        result = await agent.check_interactions(["FarmacoX", "FarmacoY"])
+
+        assert result == {"interactions": [], "verdict": "apto"}
+
+    @pytest.mark.asyncio
+    async def test_llm_reports_severe_interaction_requires_medical_review(self) -> None:
+        response = json.dumps(
+            {
+                "interactions": [
+                    {
+                        "primary_drug": "farmacox",
+                        "secondary_drug": "farmacoy",
+                        "severity": "SEVERE",
+                        "description": "Interacción grave hipotética.",
+                        "clinical_recommendation": "Evitar la combinación.",
+                    }
+                ],
+                "uncertain": False,
+            }
+        )
+        agent = SafetyCheckAgent(language_model=FakeLanguageModel(response))
+
+        result = await agent.check_interactions(["FarmacoX", "FarmacoY"])
+
+        assert result["verdict"] == "requiere_revision_medica"
+        assert result["interactions"][0]["source"] == "llm"
+        assert result["interactions"][0]["severity"] == "SEVERE"
+
+    @pytest.mark.asyncio
+    async def test_llm_reports_low_severity_is_fit_with_caution(self) -> None:
+        response = json.dumps(
+            {
+                "interactions": [
+                    {
+                        "primary_drug": "farmacox",
+                        "secondary_drug": "farmacoy",
+                        "severity": "LOW",
+                        "description": "Interacción leve hipotética.",
+                        "clinical_recommendation": "Sin acción especial.",
+                    }
+                ],
+                "uncertain": False,
+            }
+        )
+        agent = SafetyCheckAgent(language_model=FakeLanguageModel(response))
+
+        result = await agent.check_interactions(["FarmacoX", "FarmacoY"])
+
+        assert result["verdict"] == "apto_con_precaucion"
+
+    @pytest.mark.asyncio
+    async def test_llm_uncertain_forces_medical_review_even_without_interactions(
+        self,
+    ) -> None:
+        response = json.dumps({"interactions": [], "uncertain": True})
+        agent = SafetyCheckAgent(language_model=FakeLanguageModel(response))
+
+        result = await agent.check_interactions(["FarmacoRaroX", "FarmacoRaroY"])
+
+        assert result["verdict"] == "requiere_revision_medica"
+
+    @pytest.mark.asyncio
+    async def test_malformed_llm_json_defaults_to_medical_review(self) -> None:
+        agent = SafetyCheckAgent(language_model=FakeLanguageModel("esto no es JSON"))
+
+        result = await agent.check_interactions(["FarmacoX", "FarmacoY"])
+
+        assert result["verdict"] == "requiere_revision_medica"
+        assert result["interactions"] == []
+
+    @pytest.mark.asyncio
+    async def test_empty_llm_response_defaults_to_medical_review(self) -> None:
+        agent = SafetyCheckAgent(language_model=FakeLanguageModel(""))
+
+        result = await agent.check_interactions(["FarmacoX", "FarmacoY"])
+
+        assert result["verdict"] == "requiere_revision_medica"
+
+    @pytest.mark.asyncio
+    async def test_llm_entry_with_invalid_severity_is_discarded(self) -> None:
+        response = json.dumps(
+            {
+                "interactions": [
+                    {
+                        "primary_drug": "farmacox",
+                        "secondary_drug": "farmacoy",
+                        "severity": "GRAVISIMA",
+                        "description": "Severidad inventada, fuera del enum.",
+                        "clinical_recommendation": "N/A",
+                    }
+                ],
+                "uncertain": False,
+            }
+        )
+        agent = SafetyCheckAgent(language_model=FakeLanguageModel(response))
+
+        result = await agent.check_interactions(["FarmacoX", "FarmacoY"])
+
+        assert result == {"interactions": [], "verdict": "apto"}
+
+    @pytest.mark.asyncio
+    async def test_single_drug_never_consults_language_model(self) -> None:
+        language_model = FakeLanguageModel('{"interactions": []}')
+        agent = SafetyCheckAgent(language_model=language_model)
+
+        result = await agent.check_interactions(["Paracetamol"])
+
+        assert language_model.received_prompts == []
+        assert result == {"interactions": [], "verdict": "apto"}
+
+    @pytest.mark.asyncio
+    async def test_forwards_drug_names_and_system_prompt_to_language_model(
+        self,
+    ) -> None:
+        language_model = FakeLanguageModel('{"interactions": []}')
+        agent = SafetyCheckAgent(language_model=language_model)
+
+        await agent.check_interactions(["FarmacoX", "FarmacoY"])
+
+        assert len(language_model.received_prompts) == 1
+        prompt, system = language_model.received_prompts[0]
+        assert "FarmacoX" in prompt
+        assert "FarmacoY" in prompt
+        assert "seguridad farmacológica" in system

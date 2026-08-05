@@ -8,8 +8,10 @@ CIMA, Ollama, PostgreSQL ni Gemini reales.
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
+from src.infrastructure.api import security
 from tests.integration.conftest import FAKE_DRUG, FAKE_RAG_RESPONSE_TEXT
 
 
@@ -64,7 +66,9 @@ class TestConsultEndpoint:
 
 
 class TestCheckInteractionsEndpoint:
-    def test_detects_severe_interaction(self, client: TestClient) -> None:
+    def test_detects_severe_interaction_from_curated_table(
+        self, client: TestClient
+    ) -> None:
         response = client.post(
             "/api/v1/pharmacy/check-interactions",
             json={"drugs": ["Warfarina", "Aspirina"]},
@@ -74,8 +78,13 @@ class TestCheckInteractionsEndpoint:
         body = response.json()
         assert body["verdict"] == "requiere_revision_medica"
         assert len(body["interactions"]) == 1
+        assert body["interactions"][0]["source"] == "curated"
 
-    def test_no_interaction_is_fit(self, client: TestClient) -> None:
+    def test_uncovered_pair_falls_back_to_llm_and_is_fit(
+        self, client: TestClient
+    ) -> None:
+        """`Paracetamol`+`Omeprazol` no está en la base curada — el fake de Ollama en
+        conftest.py simula que el modelo no encuentra ninguna interacción."""
         response = client.post(
             "/api/v1/pharmacy/check-interactions",
             json={"drugs": ["Paracetamol", "Omeprazol"]},
@@ -115,3 +124,88 @@ class TestAnalyzePrescriptionEndpoint:
         response = client.post("/api/v1/pharmacy/analyze-prescription")
 
         assert response.status_code == 422
+
+
+class TestProcessPrescriptionEndpoint:
+    """El fake `GeminiClient` (ver conftest.py) siempre devuelve un único fármaco
+    (Ibuprofeno), así que aquí no se dispara la verificación de interacciones
+    automática (requiere 2+) — ese camino ya se cubre a nivel unitario en
+    `tests/unit/test_process_prescription_use_case.py`."""
+
+    def test_processes_uploaded_image_without_triggering_safety_check(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/api/v1/pharmacy/process-prescription",
+            files={"file": ("receta.jpg", b"fake-image-bytes", "image/jpeg")},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["prescription"]["drugs"] == [
+            {
+                "farmaco": "Ibuprofeno",
+                "dosificacion": "600 mg",
+                "frecuencia": "cada 8 horas",
+                "duracion": "5 días",
+            }
+        ]
+        assert body["safety_check"] is None
+
+    def test_requires_a_file(self, client: TestClient) -> None:
+        response = client.post("/api/v1/pharmacy/process-prescription")
+
+        assert response.status_code == 422
+
+
+class TestApiKeyAuthentication:
+    """Con `settings.api_key` configurada, los endpoints de `pharmacy_router` exigen
+    la cabecera `X-API-Key`. `/health` queda fuera del router protegido a propósito
+    (usado por *healthchecks* de infraestructura sin credenciales)."""
+
+    def test_rejects_request_without_api_key(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(security.settings, "api_key", "secret-key")
+
+        response = client.post(
+            "/api/v1/pharmacy/check-interactions",
+            json={"drugs": ["Paracetamol", "Omeprazol"]},
+        )
+
+        assert response.status_code == 401
+
+    def test_rejects_request_with_wrong_api_key(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(security.settings, "api_key", "secret-key")
+
+        response = client.post(
+            "/api/v1/pharmacy/check-interactions",
+            json={"drugs": ["Paracetamol", "Omeprazol"]},
+            headers={"X-API-Key": "wrong-key"},
+        )
+
+        assert response.status_code == 401
+
+    def test_accepts_request_with_correct_api_key(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(security.settings, "api_key", "secret-key")
+
+        response = client.post(
+            "/api/v1/pharmacy/check-interactions",
+            json={"drugs": ["Paracetamol", "Omeprazol"]},
+            headers={"X-API-Key": "secret-key"},
+        )
+
+        assert response.status_code == 200
+
+    def test_health_endpoint_never_requires_api_key(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(security.settings, "api_key", "secret-key")
+
+        response = client.get("/health")
+
+        assert response.status_code == 200

@@ -8,11 +8,13 @@ estructuralmente el puerto de dominio correspondiente (`src/domain/ports/`).
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 
+from src.application.agents.safety_agent import LLM_SYSTEM_PROMPT
 from src.infrastructure.api.main import app
 from src.infrastructure.api.routers.pharmacy_router import (
     get_cima_client,
@@ -60,6 +62,10 @@ class FakeOllamaClient:
         return [0.1, 0.2, 0.3]
 
     async def generate_completion(self, prompt: str, system: str = "") -> str:
+        if system == LLM_SYSTEM_PROMPT:
+            # Camino de razonamiento de SafetyCheckAgent para combinaciones no cubiertas
+            # por la base curada: simula que el modelo no encuentra ninguna interacción.
+            return json.dumps({"interactions": [], "uncertain": False})
         return FAKE_RAG_RESPONSE_TEXT
 
 
