@@ -11,6 +11,7 @@ htmlcov/
 .coverage
 tests/
 docs/
+evaluation/
 .memory/
 .env
 .env.*

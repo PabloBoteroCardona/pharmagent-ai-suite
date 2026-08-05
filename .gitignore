@@ -76,3 +76,7 @@ logs/
 
 # --- Sentry local artifacts ---
 .sentryclirc
+
+# --- Evaluation artifacts (regenerados por evaluation/run_evaluation.py) ---
+evaluation/results.json
+evaluation/synthetic_prescriptions/

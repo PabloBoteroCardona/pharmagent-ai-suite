@@ -1,12 +1,20 @@
 """Cliente para la API multimodal de Google Gemini (extracción de recetas).
 
-Encapsula el acceso a Gemini 1.5 Pro (`google-genai`), usado exclusivamente por
+Encapsula el acceso a Gemini (`google-genai`), usado exclusivamente por
 `PrescriptionAgent` para comprensión multimodal de imágenes de recetas médicas.
 `GOOGLE_API_KEY` (`settings.google_api_key`) está reservada a este cliente — ver
 [DECISIONS.md](../../../.memory/DECISIONS.md): nunca se usa para embeddings ni RAG,
 que permanecen exclusivamente en Ollama local. Nunca propaga excepciones: ante un
 fallo de red, API o parseo, degrada a `{"drugs": [], "advertencias": []}` para que
 las capas superiores decidan cómo continuar.
+
+Nota sobre el modelo: `gemini-1.5-pro` (usado originalmente, ver AGENTS.md/SKILLS.md)
+ha sido retirado por Google — devuelve `404 NOT_FOUND` para cualquier API key nueva desde
+esta sesión de evaluación (BLOQUE D, ver EVALUATION.md). Se sustituyó por
+`gemini-flash-latest`, un alias siempre apuntando al modelo Flash estable más reciente,
+verificado multimodal contra imágenes reales de receta. `gemini-2.5-pro`/`gemini-2.0-flash`
+también existen pero devolvieron `429 RESOURCE_EXHAUSTED` con la cuota gratuita disponible
+en esta evaluación.
 """
 
 from __future__ import annotations
@@ -19,7 +27,7 @@ from google.genai.errors import APIError
 
 from src.infrastructure.config.settings import settings
 
-DEFAULT_MODEL = "gemini-1.5-pro"
+DEFAULT_MODEL = "gemini-flash-latest"
 
 SYSTEM_PROMPT = (
     "Eres un asistente farmacéutico que transcribe recetas médicas con precisión clínica. "
@@ -37,7 +45,7 @@ _EMPTY_RESULT: dict = {"drugs": [], "advertencias": []}
 
 
 class GeminiClient:
-    """Cliente de Gemini 1.5 Pro para análisis multimodal de recetas médicas."""
+    """Cliente de Gemini para análisis multimodal de recetas médicas."""
 
     def __init__(self, api_key: str | None = None, model: str = DEFAULT_MODEL) -> None:
         resolved_key = api_key or settings.google_api_key
@@ -47,7 +55,7 @@ class GeminiClient:
     async def analyze_prescription_image(
         self, image_bytes: bytes, mime_type: str = "image/jpeg"
     ) -> dict:
-        """Envía la imagen a Gemini 1.5 Pro y devuelve el JSON estructurado de la receta."""
+        """Envía la imagen a Gemini y devuelve el JSON estructurado de la receta."""
         if self._client is None:
             return dict(_EMPTY_RESULT)
 
