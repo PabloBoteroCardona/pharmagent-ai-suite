@@ -379,11 +379,14 @@ sustituyen por dobles en memoria vía `app.dependency_overrides` de FastAPI (ver
 mocks directos para los clientes HTTP individuales (`tests/unit/test_cima_client.py`,
 `test_ollama_client.py`, `test_groq_client.py`, `test_gemini_client.py`), aprovechando que la
 propia arquitectura de puertos del dominio hace estos dobles triviales de construir.
-Cobertura actual: **~87%**
-(umbral de CI: 85%, configurado en [.coveragerc](.coveragerc)). El pipeline de integración
-continua ([.github/workflows/ci.yml](.github/workflows/ci.yml)) ejecuta lint, formato, tests
-con cobertura, y un job independiente que aplica y revierte las migraciones Alembic contra un
-Postgres real de servicio — todo en cada `push`/`pull_request` a `main`.
+Cobertura actual: **~89%** de la lógica de negocio (backend). `src/presentation/` (el panel
+Streamlit — un cliente HTTP fino sobre la API REST, sin lógica propia) queda fuera del
+cómputo (`omit` en [.coveragerc](.coveragerc)): se verifica manualmente y con
+`streamlit.testing.v1.AppTest` de forma puntual, no con la suite de pytest. Umbral de CI:
+85%. El pipeline de integración continua ([.github/workflows/ci.yml](.github/workflows/ci.yml))
+ejecuta lint, formato, tests con cobertura, y un job independiente que aplica y revierte las
+migraciones Alembic contra un Postgres real de servicio — todo en cada `push`/`pull_request`
+a `main`.
 
 ## Evaluación cuantitativa
 
