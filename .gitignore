@@ -80,3 +80,6 @@ logs/
 # --- Evaluation artifacts (regenerados por evaluation/run_evaluation.py) ---
 evaluation/results.json
 evaluation/synthetic_prescriptions/
+
+# --- Codegraph (Para mapear una base de código en un grafo de dependencias y conocimiento ) ---
+.codegraph/
