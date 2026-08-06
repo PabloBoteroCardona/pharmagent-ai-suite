@@ -1,4 +1,4 @@
-# PharmAgent AI Suite — instrucciones del proyecto
+# PharmAgent — instrucciones del proyecto
 
 Sistema multiagente (procesamiento de recetas, verificación de interacciones, consulta RAG
 sobre fichas técnicas AEMPS/CIMA) con backend en Clean Architecture (Python/FastAPI) y un

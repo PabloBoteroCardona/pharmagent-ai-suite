@@ -1,4 +1,4 @@
-"""Punto de entrada de la API REST de PharmAgent AI Suite."""
+"""Punto de entrada de la API REST de PharmAgent."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ if settings.sentry_dsn:
         traces_sample_rate=1.0,
     )
 
-app = FastAPI(title="PharmAgent AI Suite API")
+app = FastAPI(title="PharmAgent API")
 
 app.add_middleware(
     CORSMiddleware,

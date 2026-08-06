@@ -1,4 +1,4 @@
-# PharmAgent AI Suite
+# PharmAgent
 
 Trabajo de Fin de Máster (TFM) — sistema multiagente para el procesamiento de recetas
 médicas, la verificación de interacciones farmacológicas y la consulta en lenguaje natural
@@ -12,6 +12,7 @@ de fichas técnicas oficiales de medicamentos autorizados en España (AEMPS/CIMA
 - [Instrucciones de despliegue en local](#instrucciones-de-despliegue-en-local)
 - [Despliegue con Docker Compose](#despliegue-con-docker-compose)
 - [Frontend (SPA)](#frontend-spa)
+- [Imágenes del proyecto](#imágenes-del-proyecto)
 - [Endpoints de la API](#endpoints-de-la-api)
 - [CORS](#cors)
 - [Pruebas automatizadas y cobertura](#pruebas-automatizadas-y-cobertura)
@@ -21,7 +22,7 @@ de fichas técnicas oficiales de medicamentos autorizados en España (AEMPS/CIMA
 
 ## Descripción y objetivos
 
-PharmAgent AI Suite explora hasta qué punto un sistema multiagente, construido con
+PharmAgent explora hasta qué punto un sistema multiagente, construido con
 disciplina de Clean Architecture, puede apoyar tres tareas farmacéuticas concretas sin
 comprometer la seguridad del paciente ni la privacidad de los datos de salud que maneja:
 
@@ -257,6 +258,12 @@ en vivo (no existe un endpoint de estado para ellos).
 mapeos de severidad/veredicto/procedencia a HTML, escapado seguro de texto interpolado, el
 debounce del autocompletado y la sanitización de la síntesis Markdown (XSS). Se ejecutan en
 su propio job de CI, independiente del backend.
+
+## Imágenes del proyecto
+
+| Consulta Clínica | Interacciones | Receta |
+|---|---|---|
+| ![Consulta Clínica](docs/screenshots/consulta-clinica.png) | ![Interacciones](docs/screenshots/interacciones.png) | ![Receta](docs/screenshots/receta.png) |
 
 ## Endpoints de la API
 

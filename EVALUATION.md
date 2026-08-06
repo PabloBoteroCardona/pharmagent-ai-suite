@@ -1,4 +1,4 @@
-# EVALUATION.md — Evaluación cuantitativa de PharmAgent AI Suite
+# EVALUATION.md — Evaluación cuantitativa de PharmAgent
 
 Evaluación empírica de `SafetyCheckAgent` y `PrescriptionAgent` sobre un dataset sintético,
 ejecutada contra los servicios reales del proyecto (Ollama local `llama3`, Google Gemini).

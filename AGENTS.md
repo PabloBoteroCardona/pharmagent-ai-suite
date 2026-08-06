@@ -1,6 +1,6 @@
-# AGENTS.md — PharmAgent AI Suite
+# AGENTS.md — PharmAgent
 
-Especificación de los tres agentes de PharmAgent AI Suite.
+Especificación de los tres agentes de PharmAgent.
 
 **Estado real de la implementación**: los agentes **no** se implementan sobre el
 Google Agent Development Kit (`LlmAgent`, tool-calling declarativo) — se implementan como

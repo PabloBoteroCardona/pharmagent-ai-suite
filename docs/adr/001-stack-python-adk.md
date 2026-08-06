@@ -16,7 +16,7 @@ Aceptado — 2026-08-04.
 
 ## Contexto
 
-PharmAgent AI Suite es un Trabajo de Fin de Máster (TFM) que implementa un sistema
+PharmAgent es un Trabajo de Fin de Máster (TFM) que implementa un sistema
 multiagente para el procesamiento de recetas médicas, verificación de interacciones
 farmacológicas y consulta de fichas técnicas (AEMPS/CIMA). El sistema maneja datos de
 salud (categoría especial según RGPD/LOPDGDD), debe ser evaluable en un entorno
