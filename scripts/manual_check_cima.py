@@ -1,6 +1,10 @@
 """Script de prueba manual para CimaAPIClient contra la API real de CIMA/AEMPS.
 
-Uso: python test_cima.py
+No es parte de la suite automatizada (ver tests/unit/test_cima_client.py, que cubre
+CimaAPIClient con dobles) — este script hace peticiones reales a CIMA, útil para
+verificación puntual contra el servicio real.
+
+Uso: python -m scripts.manual_check_cima
 """
 
 import asyncio
