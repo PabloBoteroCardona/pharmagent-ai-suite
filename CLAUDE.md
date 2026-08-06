@@ -21,8 +21,9 @@ completa, [AGENTS.md](AGENTS.md)/[SKILLS.md](SKILLS.md) para el contrato de los 
 
 ```bash
 # Backend
-pytest                                          # suite completa
+pytest                                          # suite completa (sin los tests marcados `postgres`, ver abajo)
 pytest --cov=src --cov-report=term-missing      # con cobertura (umbral CI: 85%)
+pytest -m postgres tests/integration/test_*_postgres.py  # tests de repositorio contra un Postgres real (requiere docker compose up -d postgres + alembic upgrade head)
 ruff check . && ruff format --check .           # lint + formato
 
 # Frontend (cd frontend/)
@@ -55,7 +56,11 @@ npm run dev                                     # servidor de desarrollo
 - **Backend**: dobles en memoria vía `app.dependency_overrides` de FastAPI
   (`tests/integration/conftest.py`) para tests de endpoint; `httpx.MockTransport`/mocks
   directos para clientes HTTP individuales (`tests/unit/test_*_client.py`). Determinista, sin
-  Docker/red/credenciales.
+  Docker/red/credenciales. Los tests de repositorio (`test_drug_repository_postgres.py`,
+  `test_prescription_record_repository_postgres.py`) son la excepción deliberada: corren
+  contra un Postgres real (SQL/pgvector reales, no un doble), marcados `postgres` y
+  excluidos del `pytest` por defecto (`pytest.ini`, `addopts = -m "not postgres"`) — en CI
+  corren en el job `migrations`, que ya levanta el servicio Postgres.
 - **Frontend**: Vitest + `jsdom`. Cubre lógica pura (`ui.ts`, `autocomplete.ts`,
   `markdown.ts`) — mocks de `./api` con `vi.mock`, temporizadores falsos (`vi.useFakeTimers`)
   para el debounce del autocompletado.

@@ -13,11 +13,15 @@ cómo degradar.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Self
 
 import httpx
 
 from src.infrastructure.config.settings import settings
+from src.infrastructure.external.retry import retry_transient_errors
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_SECONDS = 10.0
 
@@ -44,6 +48,7 @@ class CimaAPIClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
+    @retry_transient_errors
     async def search_medicamentos(self, nombre: str) -> list[dict]:
         """Busca medicamentos por nombre. Devuelve lista vacía si no hay resultados o falla la red."""
         try:
@@ -52,15 +57,24 @@ class CimaAPIClient:
             )
             response.raise_for_status()
             return response.json().get("resultados", [])
-        except (httpx.HTTPError, json.JSONDecodeError):
+        except (httpx.HTTPError, json.JSONDecodeError) as exc:
+            logger.warning(
+                "cima_search_medicamentos_failed",
+                extra={"nombre": nombre, "error": str(exc)},
+            )
             return []
 
+    @retry_transient_errors
     async def _get_medicamento(self, params: dict[str, str]) -> dict | None:
         try:
             response = await self._client.get("/medicamento", params=params)
             response.raise_for_status()
             return response.json() or None
-        except (httpx.HTTPError, json.JSONDecodeError):
+        except (httpx.HTTPError, json.JSONDecodeError) as exc:
+            logger.warning(
+                "cima_get_medicamento_failed",
+                extra={"params": params, "error": str(exc)},
+            )
             return None
 
     async def get_medicamento_by_nregistro(self, nregistro: str) -> dict | None:
@@ -89,16 +103,27 @@ class CimaAPIClient:
         — información dirigida al paciente, en lenguaje divulgativo."""
         return await self._get_documento_segmentado_html(nregistro, PROSPECTO_TIPO_DOC)
 
+    @retry_transient_errors
+    async def _fetch_documento_segmentado(
+        self, nregistro: str, tipo_doc: int
+    ) -> httpx.Response:
+        response = await self._client.get(
+            f"/docSegmentado/contenido/{tipo_doc}",
+            params={"nregistro": nregistro},
+        )
+        response.raise_for_status()
+        return response
+
     async def _get_documento_segmentado_html(
         self, nregistro: str, tipo_doc: int
     ) -> str | None:
         try:
-            response = await self._client.get(
-                f"/docSegmentado/contenido/{tipo_doc}",
-                params={"nregistro": nregistro},
+            response = await self._fetch_documento_segmentado(nregistro, tipo_doc)
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "cima_get_documento_segmentado_failed",
+                extra={"nregistro": nregistro, "tipo_doc": tipo_doc, "error": str(exc)},
             )
-            response.raise_for_status()
-        except httpx.HTTPError:
             return None
 
         try:

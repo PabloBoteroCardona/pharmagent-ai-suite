@@ -14,14 +14,23 @@ consultas futuras sobre el mismo fármaco son instantáneas. Esto solo funciona 
 `query` es (o contiene) un nombre reconocible por la búsqueda de CIMA (coincidencia por
 nombre, no semántica) — una pregunta en lenguaje natural sin nombre de fármaco identificable
 seguirá sin encontrar nada en el paso de CIMA en vivo.
+
+`record_cima_search_outcome` (`src.infrastructure.metrics`) es la única dependencia de
+infraestructura de este módulo, aparte de `DrugModel` bajo `TYPE_CHECKING`: se trata como
+observabilidad transversal (misma categoría que un logger), no como una regla de negocio, así
+que no pasa por un puerto de dominio — ver docstring de `metrics.py`.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from src.domain.ports import CimaDataSourcePort, DrugRepositoryPort, LanguageModelPort
-from src.infrastructure.models import DrugModel
+from src.infrastructure.metrics import record_cima_search_outcome
+
+if TYPE_CHECKING:
+    from src.infrastructure.models import DrugModel
 
 # Al caer al respaldo de CIMA en vivo (caché sin resultados), se indexan como máximo
 # estos fármacos aunque `limit` sea mayor — cada uno implica 3 llamadas HTTP a CIMA
@@ -122,14 +131,17 @@ class DrugService:
             else []
         )
         if cached:
+            record_cima_search_outcome("cache")
             return DrugSearchResult(drugs=cached, source="cache")
 
         live_drugs = await self._search_and_index_live(
             query, limit=min(limit, LIVE_FALLBACK_MAX_RESULTS)
         )
         if live_drugs:
+            record_cima_search_outcome("live")
             return DrugSearchResult(drugs=live_drugs, source="live")
 
+        record_cima_search_outcome("none")
         return DrugSearchResult(drugs=[], source="none")
 
     async def _search_and_index_live(self, name: str, limit: int) -> list[DrugModel]:

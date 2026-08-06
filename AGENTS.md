@@ -72,9 +72,11 @@ escaneo o PDF) mediante comprensión multimodal.
   Google procesa en sus servidores antes de responder — riesgo real, no eliminado. Decisión
   completa, incluyendo por qué un aviso/casilla no basta legalmente como mitigación única, en
   [ADR 002](docs/adr/002-datos-personales-foto-receta.md).
-  - **Despliegue público** (`VITE_DEMO_MODE=true`): no se acepta ninguna foto real — la
-    pestaña de Receta solo ofrece imágenes de ejemplo sintéticas. Elimina el riesgo en vez de
-    gestionarlo.
+  - **Despliegue público** (`VITE_DEMO_MODE=true` + `DEMO_MODE=true`): no se acepta ninguna
+    foto real — la pestaña de Receta solo ofrece imágenes de ejemplo sintéticas, y el
+    backend rechaza con 403 cualquier imagen que no sea una de ellas
+    (`src/infrastructure/api/demo_mode.py`), aunque se llame a la API directamente sin pasar
+    por la interfaz. Elimina el riesgo en vez de gestionarlo.
   - **Desarrollo local**: mitigaciones en profundidad — `SYSTEM_PROMPT` instruye a no incluir
     ningún dato identificativo en la respuesta; el resultado extraído es lo único que se
     persiste (la imagen no se guarda en disco ni en logs); el frontend exige una casilla de

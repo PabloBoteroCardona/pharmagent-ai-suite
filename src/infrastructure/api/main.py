@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sentry_sdk
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -14,8 +14,13 @@ from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from src.infrastructure import metrics
 from src.infrastructure.api.routers.pharmacy_router import router as pharmacy_router
+from src.infrastructure.api.security import verify_api_key
 from src.infrastructure.config.settings import settings
+from src.infrastructure.logging_config import configure_logging
+
+configure_logging()
 
 # Tamaño máximo de cuerpo de petición (recetas fotografiadas con el móvil caben de sobra;
 # protege de subidas descontroladas — abuso de ancho de banda/memoria, y de coste en Gemini
@@ -75,3 +80,14 @@ app.include_router(pharmacy_router)
 @limiter.exempt
 async def health(request: Request) -> dict:
     return {"status": "ok"}
+
+
+@app.get("/internal/metrics", dependencies=[Depends(verify_api_key)])
+@limiter.exempt
+async def internal_metrics(request: Request) -> dict:
+    """Latencia p50/p95 por proveedor LLM y tasa de fallback a CIMA en vivo (ver
+    `metrics.py`) — snapshot en memoria, se reinicia con cada reinicio del proceso.
+    Sujeto a `API_KEY` cuando está configurada (igual que `pharmacy_router`, ver
+    `security.py`), exento de rate limiting: es un endpoint de diagnóstico, no de negocio,
+    pensado para sondearse con más frecuencia de la que `RATE_LIMIT` permitiría."""
+    return metrics.snapshot()

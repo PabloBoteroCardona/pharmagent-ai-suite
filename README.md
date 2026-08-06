@@ -61,12 +61,16 @@ el responsable del tratamiento de esos datos ante el RGPD/LOPDGDD — sigue sien
 el servicio, no quien sube la foto. Por eso la mitigación real, no solo declarativa, es
 distinta según el entorno:
 
-- **Despliegue público (`VITE_DEMO_MODE=true`)**: la pestaña de Receta **no acepta fotos de
-  desconocidos en absoluto**. Solo permite elegir entre 3 imágenes de ejemplo 100% sintéticas
-  (`frontend/public/samples/`, generadas con
+- **Despliegue público (`VITE_DEMO_MODE=true` + `DEMO_MODE=true`)**: la pestaña de Receta
+  **no acepta fotos de desconocidos en absoluto**. Solo permite elegir entre 3 imágenes de
+  ejemplo 100% sintéticas (`frontend/public/samples/`, generadas con
   [evaluation/generate_synthetic_prescriptions.py](evaluation/generate_synthetic_prescriptions.py) —
   texto renderizado sobre fondo blanco, sin ninguna receta ni paciente real). Elimina el
-  riesgo en vez de intentar gestionarlo.
+  riesgo en vez de intentar gestionarlo. La restricción no depende solo del frontend: con
+  `DEMO_MODE=true` el backend (`src/infrastructure/api/demo_mode.py`) rechaza con 403
+  cualquier imagen subida a `/analyze-prescription`/`/process-prescription` cuyo hash SHA-256
+  no coincida con uno de los 3 ejemplos, aunque se llame a la API directamente sin pasar por
+  la interfaz.
 - **Desarrollo local** (`VITE_DEMO_MODE` sin definir): mantiene la subida real, con
   mitigaciones en profundidad — ninguna suficiente por sí sola, pero sí honestas: el
   resultado extraído es lo único que se persiste (**la imagen nunca se guarda**, ni en la
@@ -166,6 +170,13 @@ desarrollo activo. Para un despliegue completo en contenedores, ver
    pip install -r requirements.txt
    ```
 
+   `requirements.txt` es un lockfile generado con [uv](https://docs.astral.sh/uv/) a partir
+   de `requirements.in` (rangos + comentarios de contexto, la fuente de verdad editable) —
+   fija exactamente las mismas versiones, transitivas incluidas, que las que pasan la suite
+   de tests en CI, en vez de rangos sueltos que cada `pip install` podría resolver de forma
+   distinta. Para regenerarlo tras cambiar `requirements.in`, ver el comentario al inicio de
+   ese archivo.
+
 2. **Levantar PostgreSQL (pgvector) y Ollama** con Docker Compose:
 
    ```bash
@@ -240,6 +251,19 @@ de `localhost`. Tras el arranque, poblar la caché semántica igual que en el pa
 docker exec pharmagent_api python -m scripts.ingest_drugs
 ```
 
+`docker-compose.yml` es en sí mismo el perfil endurecido: `api` corre con `read_only: true`
++ `cap_drop: [ALL]` (imagen propia, sin necesidad de escritura en disco ni de ninguna
+capability Linux — ya corre como usuario sin privilegios), y ni `postgres` ni `ollama`
+publican su puerto al host (`api` los resuelve por nombre en la red interna de Compose; no
+lo necesita). `docker-compose.override.yml`, cargado automáticamente por `docker compose up`
+en local, vuelve a publicar esos puertos solo para desarrollo (conectar un cliente SQL, o
+correr la API fuera de Docker contra el mismo Postgres/Ollama). Para el perfil endurecido
+explícitamente, sin el override:
+
+```bash
+docker compose -f docker-compose.yml up -d
+```
+
 ## Frontend (SPA)
 
 [frontend/](frontend/) es una SPA estática (TypeScript + Tailwind CSS v4, compilada con Vite,
@@ -301,11 +325,16 @@ en todo el prefijo — ver [Seguridad en un despliegue público](#seguridad-en-u
 | Método | Ruta | Descripción | Agente / servicio |
 |---|---|---|---|
 | `GET` | `/health` | Comprobación de disponibilidad del servicio | — |
+| `GET` | `/internal/metrics` | Latencia p50/p95 por proveedor LLM y tasa de fallback a CIMA en vivo (diagnóstico, no de negocio) | `metrics.py` |
 | `POST` | `/search` | Búsqueda de fármacos: caché vectorial primero, CIMA en vivo como respaldo automático | `DrugService` |
 | `POST` | `/consult` | Consulta en lenguaje natural, respuesta *grounded* (caché + CIMA en vivo como respaldo) | `RAGPharmAgent` |
 | `POST` | `/check-interactions` | Verificación de interacciones entre 2+ fármacos (base curada + LLM en la nube vía Groq) | `SafetyCheckAgent` |
 | `POST` | `/analyze-prescription` | Extracción estructurada desde imagen de receta | `PrescriptionAgent` |
 | `POST` | `/process-prescription` | Flujo completo: extracción + verificación automática de interacciones, con persistencia auditable | `ProcessPrescriptionUseCase` |
+
+`/internal/metrics` sí exige `X-API-Key` cuando `API_KEY` está configurada (a diferencia de
+`/health`, que debe quedar abierta para los chequeos de salud del proveedor de despliegue) —
+ver [Resiliencia y observabilidad](#resiliencia-y-observabilidad-de-los-clientes-externos).
 
 ### Ejemplos de uso
 
@@ -442,7 +471,7 @@ de peticiones — para consumo del frontend local sin ninguna fricción:
 curl http://localhost:8000/api/v1/pharmacy/search -d '...'
 ```
 
-Antes de exponerla a Internet, cuatro variables de entorno pasan a ser relevantes (todas en
+Antes de exponerla a Internet, varias variables de entorno pasan a ser relevantes (todas en
 [.env.example](.env.example)):
 
 - **`API_KEY`**: vacía por defecto (auth desactivada). Con un valor, `pharmacy_router` exige
@@ -462,6 +491,12 @@ Antes de exponerla a Internet, cuatro variables de entorno pasan a ser relevante
 - **`DATABASE_SSL`** (`false` por defecto): el Postgres de `docker-compose.yml` no ofrece
   SSL; un Postgres gestionado en un proveedor de despliegue normalmente sí lo exige —
   `DATABASE_SSL=true` ahí, o la conexión falla (ver `database.py`).
+- **`DEMO_MODE`** (`false` por defecto): en conjunto con `VITE_DEMO_MODE=true` del frontend
+  (ver sección anterior), hace que el backend rechace con 403 cualquier imagen subida a
+  `/analyze-prescription`/`/process-prescription` que no sea uno de los 3 ejemplos
+  sintéticos permitidos (`src/infrastructure/api/demo_mode.py`, comprobación por hash
+  SHA-256) — cierra la brecha de que la restricción de la interfaz, por sí sola, no impide
+  llamar a la API directamente con una foto real.
 
 Además, todo el cuerpo de las peticiones está limitado a 10 MB (`MaxBodySizeMiddleware` en
 `main.py`) — protege de subidas descontroladas en los endpoints de receta.
@@ -470,6 +505,29 @@ Ninguna de estas medidas sustituye una autenticación de usuarios real ni resuel
 sola el tratamiento de datos personales en la foto de receta — ver
 [ADR 002](docs/adr/002-datos-personales-foto-receta.md) para esa decisión, independiente de
 esta.
+
+### Resiliencia y observabilidad de los clientes externos
+
+Los 4 clientes de infraestructura que hacen llamadas de red (`CimaAPIClient`, `GroqClient`,
+`OllamaClient`, `GeminiClient`) comparten dos mecanismos, además del contrato defensivo que
+ya tenían (nunca propagan una excepción; degradan a un valor vacío):
+
+- **Reintentos con backoff exponencial** (`tenacity`, ver
+  [retry.py](src/infrastructure/external/retry.py)): hasta 3 intentos, solo ante un fallo
+  transitorio (error de red/timeout, `429`, `5xx`) — nunca ante un `4xx` de validación, que
+  no se arregla reintentando la misma petición.
+- **Logging estructurado en JSON** (ver
+  [logging_config.py](src/infrastructure/logging_config.py)): cada fallo se registra con
+  contexto (parámetros de la llamada, error) justo antes de degradar, no en su lugar — así
+  un fallo repetido de un proveedor es visible en los logs del proveedor de despliegue, en
+  vez de desaparecer silenciosamente detrás de la respuesta vacía.
+- **Métricas básicas en memoria** (ver [metrics.py](src/infrastructure/metrics.py),
+  expuestas en `GET /internal/metrics`): latencia p50/p95 por proveedor (`groq`, `gemini`,
+  `ollama_completion`, `ollama_embedding`) y tasa de fallback a CIMA en vivo
+  (`DrugService.search_drugs_semantic`). Sin Prometheus ni backend externo — un snapshot que
+  se reinicia con el proceso, suficiente para responder "¿qué proveedor está lento/fallando
+  ahora mismo?" sin tener que grepear logs, no para sustituir observabilidad real en un
+  servicio con tráfico de producción.
 
 ## Pruebas automatizadas y cobertura
 
@@ -497,8 +555,17 @@ El frontend tiene su propia suite (Vitest + `jsdom`, ver [Frontend (SPA)](#front
 separada de `pytest-cov` por ser TypeScript. El pipeline de integración continua
 ([.github/workflows/ci.yml](.github/workflows/ci.yml)) tiene tres jobs independientes en
 cada `push`/`pull_request` a `main`: `quality` (lint, formato, tests + cobertura del
-backend), `frontend` (tests + build de TypeScript) y `migrations` (aplica y revierte las
-migraciones Alembic contra un Postgres real de servicio).
+backend), `frontend` (tests + build de TypeScript) y `migrations` (aplica las migraciones
+Alembic contra un Postgres real de servicio, ejecuta contra él los tests de repositorio
+marcados `postgres` — excluidos del `pytest` por defecto, ver
+[tests/integration/test_drug_repository_postgres.py](tests/integration/test_drug_repository_postgres.py) —
+y por último verifica el roundtrip de downgrade/upgrade).
+
+Un cuarto workflow, independiente de los anteriores
+([.github/workflows/dependency-audit.yml](.github/workflows/dependency-audit.yml)), corre
+`pip-audit`/`npm audit` cada lunes (además de a demanda, `workflow_dispatch`) — detecta CVEs
+publicadas en dependencias ya fijadas después del último commit, sin depender de que alguien
+se acuerde de comprobarlo a mano.
 
 ## Evaluación cuantitativa
 

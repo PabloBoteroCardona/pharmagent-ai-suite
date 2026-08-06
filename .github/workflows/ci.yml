@@ -101,6 +101,11 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://pharmagent:pharmagent_pass@localhost:5432/pharmagent_db
         run: alembic upgrade head
 
+      - name: Run repository tests against real Postgres
+        env:
+          DATABASE_URL: postgresql+asyncpg://pharmagent:pharmagent_pass@localhost:5432/pharmagent_db
+        run: pytest -m postgres tests/integration/test_drug_repository_postgres.py tests/integration/test_prescription_record_repository_postgres.py
+
       - name: Verify downgrade round-trip
         env:
           DATABASE_URL: postgresql+asyncpg://pharmagent:pharmagent_pass@localhost:5432/pharmagent_db

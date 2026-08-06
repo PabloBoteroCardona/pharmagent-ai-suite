@@ -2,8 +2,11 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: pharmagent_postgres
-    ports:
-      - "5433:5432"
+    # Sin publicar al host: dentro de este compose, `api` resuelve `postgres` por nombre en
+    # la red interna de Docker — no necesita el puerto publicado, y publicarlo expondría
+    # Postgres directamente en la máquina host sin necesidad. `docker-compose.override.yml`
+    # (cargado automáticamente en local, ver ese archivo) lo vuelve a publicar solo para
+    # desarrollo (conectar un cliente SQL, correr la API fuera de Docker).
     environment:
       POSTGRES_USER: pharmagent
       POSTGRES_PASSWORD: pharmagent_pass
@@ -19,8 +22,7 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: pharmagent_ollama
-    ports:
-      - "11434:11434"
+    # Ver comentario de `postgres.ports` arriba — mismo motivo, mismo mecanismo de override.
     volumes:
       - ollama_data:/root/.ollama
 
@@ -29,6 +31,18 @@ services:
     container_name: pharmagent_api
     ports:
       - "8000:8000"
+    # Endurecimiento del contenedor propio (imagen que controlamos, a diferencia de
+    # `postgres`/`ollama`): sin escritura en el sistema de ficheros raíz (el código es
+    # estático, `PYTHONDONTWRITEBYTECODE=1` ya evita el único escrito habitual, `.pyc`) y sin
+    # ninguna capability Linux — ya corre como usuario sin privilegios (`USER pharmagent` en
+    # el Dockerfile) y no necesita ninguna (p. ej. no liga un puerto <1024). `/tmp` como
+    # tmpfs por margen de seguridad, para lo que pueda necesitar escritura temporal
+    # (`tempfile`, etc.) sin relajar `read_only`.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
     env_file:
       - .env
     environment:

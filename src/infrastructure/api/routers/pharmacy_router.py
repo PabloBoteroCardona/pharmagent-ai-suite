@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.agents import PrescriptionAgent, RAGPharmAgent, SafetyCheckAgent
 from src.application.services import DrugService
+from src.infrastructure.api.demo_mode import enforce_demo_mode_allowlist
 from src.infrastructure.api.schemas.drug_schemas import (
     ConsultationRequest,
     ConsultationResponse,
@@ -29,6 +30,7 @@ from src.infrastructure.api.schemas.drug_schemas import (
     ProcessPrescriptionResponse,
 )
 from src.infrastructure.api.security import verify_api_key
+from src.infrastructure.config.settings import settings
 from src.infrastructure.database import get_db_session
 from src.infrastructure.external.cima_client import CimaAPIClient
 from src.infrastructure.external.gemini_client import GeminiClient
@@ -166,6 +168,8 @@ async def analyze_prescription(
     agent: PrescriptionAgent = Depends(get_prescription_agent),  # noqa: B008
 ) -> PrescriptionAnalysisResponse:
     image_bytes = await file.read()
+    if settings.demo_mode:
+        enforce_demo_mode_allowlist(image_bytes)
     result = await agent.extract_prescription(
         image_bytes, mime_type=file.content_type or "image/jpeg"
     )
@@ -191,6 +195,8 @@ async def process_prescription(
     """Flujo completo: extrae los fármacos de la imagen de la receta y, si hay 2 o más,
     verifica automáticamente sus interacciones conocidas."""
     image_bytes = await file.read()
+    if settings.demo_mode:
+        enforce_demo_mode_allowlist(image_bytes)
     result = await use_case.execute(
         image_bytes, mime_type=file.content_type or "image/jpeg"
     )

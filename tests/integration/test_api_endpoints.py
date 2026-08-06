@@ -8,9 +8,12 @@ CIMA, Ollama, PostgreSQL ni Gemini reales.
 
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 from fastapi.testclient import TestClient
 
+from src.infrastructure.api import demo_mode
 from src.infrastructure.api.main import app
 from src.infrastructure.api.routers.pharmacy_router import (
     get_cima_client,
@@ -33,6 +36,26 @@ class TestHealthEndpoint:
 
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
+
+
+class TestInternalMetricsEndpoint:
+    def test_returns_the_metrics_snapshot_shape(self, client: TestClient) -> None:
+        response = client.get("/internal/metrics")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert "latency_by_provider_ms" in body
+        assert "cima_search" in body
+        assert set(body["cima_search"]["outcomes"]) == {"cache", "live", "none"}
+
+    def test_requires_api_key_when_configured(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(settings, "api_key", "secret-key")
+
+        response = client.get("/internal/metrics")
+
+        assert response.status_code == 401
 
 
 class TestSearchEndpoint:
@@ -339,5 +362,64 @@ class TestApiKeyAuthenticationWhenConfigured:
         monkeypatch.setattr(settings, "api_key", "secret-key")
 
         response = client.get("/health")
+
+        assert response.status_code == 200
+
+
+class TestDemoModeEnforcementWhenActive:
+    """Con `settings.demo_mode` activo (el caso del despliegue público) — el backend debe
+    rechazar cualquier imagen que no sea uno de los ejemplos permitidos (ver
+    `demo_mode.py`), sin depender de que el frontend restrinja la subida por su cuenta."""
+
+    ALLOWED_BYTES = b"contenido-de-un-ejemplo-permitido"
+
+    @pytest.fixture(autouse=True)
+    def _demo_mode_active_with_known_allowlist(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(settings, "demo_mode", True)
+        monkeypatch.setattr(
+            demo_mode,
+            "ALLOWED_DEMO_IMAGE_SHA256",
+            {hashlib.sha256(self.ALLOWED_BYTES).hexdigest()},
+        )
+
+    def test_rejects_non_allowlisted_image_on_analyze_prescription(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/api/v1/pharmacy/analyze-prescription",
+            files={"file": ("receta.jpg", b"foto-real-de-alguien", "image/jpeg")},
+        )
+
+        assert response.status_code == 403
+
+    def test_rejects_non_allowlisted_image_on_process_prescription(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/api/v1/pharmacy/process-prescription",
+            files={"file": ("receta.jpg", b"foto-real-de-alguien", "image/jpeg")},
+        )
+
+        assert response.status_code == 403
+
+    def test_accepts_allowlisted_sample_image_on_analyze_prescription(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/api/v1/pharmacy/analyze-prescription",
+            files={"file": ("receta.jpg", self.ALLOWED_BYTES, "image/jpeg")},
+        )
+
+        assert response.status_code == 200
+
+    def test_accepts_allowlisted_sample_image_on_process_prescription(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/api/v1/pharmacy/process-prescription",
+            files={"file": ("receta.jpg", self.ALLOWED_BYTES, "image/jpeg")},
+        )
 
         assert response.status_code == 200

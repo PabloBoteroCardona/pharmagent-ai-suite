@@ -19,12 +19,17 @@ en esta evaluación.
 from __future__ import annotations
 
 import json
+import logging
 
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError
 
 from src.infrastructure.config.settings import settings
+from src.infrastructure.external.retry import retry_transient_errors
+from src.infrastructure.metrics import timed
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "gemini-flash-latest"
 
@@ -56,6 +61,8 @@ class GeminiClient:
         self._client = genai.Client(api_key=resolved_key) if resolved_key else None
         self._model = model
 
+    @timed("gemini")
+    @retry_transient_errors
     async def analyze_prescription_image(
         self, image_bytes: bytes, mime_type: str = "image/jpeg"
     ) -> dict:
@@ -75,7 +82,10 @@ class GeminiClient:
                 ),
             )
             data = json.loads(response.text or "{}")
-        except (APIError, json.JSONDecodeError, ValueError):
+        except (APIError, json.JSONDecodeError, ValueError) as exc:
+            logger.warning(
+                "gemini_analyze_prescription_image_failed", extra={"error": str(exc)}
+            )
             return dict(_EMPTY_RESULT)
 
         if not isinstance(data, dict):

@@ -16,11 +16,16 @@ timeout, respuesta de error o cuerpo malformado, degrada a `""` (mismo contrato 
 from __future__ import annotations
 
 import json
+import logging
 from typing import Self
 
 import httpx
 
 from src.infrastructure.config.settings import settings
+from src.infrastructure.external.retry import retry_transient_errors
+from src.infrastructure.metrics import timed
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_SECONDS = 15.0
 DEFAULT_COMPLETION_MODEL = "llama-3.1-8b-instant"
@@ -57,6 +62,8 @@ class GroqClient:
         satisfacer estructuralmente `LanguageModelPort` y nunca se invoca en la práctica."""
         return []
 
+    @timed("groq")
+    @retry_transient_errors
     async def generate_completion(
         self,
         prompt: str,
@@ -96,5 +103,6 @@ class GroqClient:
             response.raise_for_status()
             choices = response.json().get("choices", [])
             return choices[0]["message"]["content"] if choices else ""
-        except (httpx.HTTPError, json.JSONDecodeError, KeyError, IndexError):
+        except (httpx.HTTPError, json.JSONDecodeError, KeyError, IndexError) as exc:
+            logger.warning("groq_generate_completion_failed", extra={"error": str(exc)})
             return ""

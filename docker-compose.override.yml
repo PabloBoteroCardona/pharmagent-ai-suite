@@ -1,0 +1,17 @@
+# Cargado automáticamente por `docker compose up` cuando está en el mismo directorio que
+# docker-compose.yml (comportamiento estándar de Compose) — solo para desarrollo local.
+# Añade lo que docker-compose.yml (perfil de producción, ver sus comentarios) deja fuera a
+# propósito: publica Postgres/Ollama en el host, para poder conectar un cliente SQL o correr
+# la API fuera de Docker (`uvicorn` directo, ver "Instrucciones de despliegue en local" del
+# README) contra el mismo Postgres/Ollama de este compose.
+#
+# Un despliegue real (o cualquiera que quiera el perfil endurecido explícitamente) debe
+# omitir este archivo: `docker compose -f docker-compose.yml up` en vez de `docker compose up`.
+services:
+  postgres:
+    ports:
+      - "5433:5432"
+
+  ollama:
+    ports:
+      - "11434:11434"

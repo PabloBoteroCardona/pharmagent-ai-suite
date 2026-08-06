@@ -69,6 +69,15 @@ class Settings(BaseSettings):
     # "<cantidad>/<periodo>".
     rate_limit: str = "5/minute"
 
+    # `False` (por defecto) = comportamiento normal, apropiado para desarrollo local. En el
+    # despliegue público debe ir en `True`, en conjunto con `VITE_DEMO_MODE=true` en el
+    # frontend (ver `frontend/.env.example`): activa el enforcement de `demo_mode.py` en
+    # `/analyze-prescription`/`/process-prescription`, que rechaza cualquier imagen que no
+    # sea uno de los 3 ejemplos sintéticos incluidos — necesario porque la restricción de
+    # la UI (`viewPrescription.ts`) por sí sola no impide llamar a la API directamente con
+    # una foto real. Ver ADR 002 (`docs/adr/002-datos-personales-foto-receta.md`).
+    demo_mode: bool = False
+
 
 @lru_cache
 def get_settings() -> Settings:

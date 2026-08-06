@@ -9,10 +9,12 @@ estructuralmente el puerto de dominio correspondiente (`src/domain/ports/`).
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncGenerator
 from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from src.application.agents.safety_agent import LLM_SYSTEM_PROMPT
 from src.infrastructure.api.main import app
@@ -24,6 +26,7 @@ from src.infrastructure.api.routers.pharmacy_router import (
     get_ollama_client,
     get_prescription_record_repository,
 )
+from src.infrastructure.config.settings import settings
 
 FAKE_DRUG = SimpleNamespace(
     nregistro="12345",
@@ -217,3 +220,37 @@ def client() -> TestClient:
     app.state.limiter.enabled = True
 
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def db_session() -> AsyncGenerator[AsyncSession, None]:
+    """Sesión contra un Postgres real (`settings.database_url`), envuelta en una
+    transacción que siempre se revierte al terminar el test — usada solo por los tests
+    marcados `@pytest.mark.postgres` (excluidos por defecto, ver `pytest.ini`).
+
+    Los repositorios bajo prueba (`DrugRepository`, `PrescriptionRecordRepository`) hacen
+    `commit()` internamente; `join_transaction_mode="create_savepoint"` intercepta esos
+    commits como savepoints anidados dentro de la transacción externa, en vez de que
+    confirmen datos de verdad — así el test nunca deja datos residuales en la base (local o
+    de CI), aunque falle a mitad de camino."""
+    connect_args: dict[str, object] = {} if settings.database_ssl else {"ssl": False}
+    engine = create_async_engine(settings.database_url, connect_args=connect_args)
+    try:
+        connection = await engine.connect()
+    except OSError as exc:
+        await engine.dispose()
+        pytest.skip(f"Postgres no accesible en {settings.database_url}: {exc}")
+
+    transaction = await connection.begin()
+    session = AsyncSession(
+        bind=connection,
+        join_transaction_mode="create_savepoint",
+        expire_on_commit=False,
+    )
+
+    yield session
+
+    await session.close()
+    await transaction.rollback()
+    await connection.close()
+    await engine.dispose()

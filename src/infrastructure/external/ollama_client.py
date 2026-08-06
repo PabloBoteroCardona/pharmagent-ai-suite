@@ -11,11 +11,16 @@ continuar.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Self
 
 import httpx
 
 from src.infrastructure.config.settings import settings
+from src.infrastructure.external.retry import retry_transient_errors
+from src.infrastructure.metrics import timed
+
+logger = logging.getLogger(__name__)
 
 # La generación local puede tardar bastante más que una simple consulta REST;
 # un timeout demasiado corto produciría fallos espurios en modelos grandes.
@@ -44,6 +49,8 @@ class OllamaClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
+    @timed("ollama_embedding")
+    @retry_transient_errors
     async def generate_embedding(
         self, text: str, model: str = DEFAULT_EMBEDDING_MODEL
     ) -> list[float]:
@@ -54,9 +61,14 @@ class OllamaClient:
             )
             response.raise_for_status()
             return response.json().get("embedding", [])
-        except (httpx.HTTPError, json.JSONDecodeError):
+        except (httpx.HTTPError, json.JSONDecodeError) as exc:
+            logger.warning(
+                "ollama_generate_embedding_failed", extra={"error": str(exc)}
+            )
             return []
 
+    @timed("ollama_completion")
+    @retry_transient_errors
     async def generate_completion(
         self,
         prompt: str,
@@ -78,5 +90,8 @@ class OllamaClient:
             response = await self._client.post("/api/generate", json=payload)
             response.raise_for_status()
             return response.json().get("response", "")
-        except (httpx.HTTPError, json.JSONDecodeError):
+        except (httpx.HTTPError, json.JSONDecodeError) as exc:
+            logger.warning(
+                "ollama_generate_completion_failed", extra={"error": str(exc)}
+            )
             return ""
