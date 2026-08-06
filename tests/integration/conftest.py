@@ -119,7 +119,9 @@ class FakeOllamaClient:
     async def generate_embedding(self, text: str) -> list[float]:
         return [0.1, 0.2, 0.3]
 
-    async def generate_completion(self, prompt: str, system: str = "") -> str:
+    async def generate_completion(
+        self, prompt: str, system: str = "", temperature: float | None = None
+    ) -> str:
         raise NotImplementedError
 
 
@@ -131,7 +133,9 @@ class FakeGroqClient:
     async def generate_embedding(self, text: str) -> list[float]:
         raise NotImplementedError
 
-    async def generate_completion(self, prompt: str, system: str = "") -> str:
+    async def generate_completion(
+        self, prompt: str, system: str = "", temperature: float | None = None
+    ) -> str:
         if system == LLM_SYSTEM_PROMPT:
             # Camino de razonamiento de SafetyCheckAgent para combinaciones no cubiertas
             # por la base curada: simula que el modelo no encuentra ninguna interacción.

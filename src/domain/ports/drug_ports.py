@@ -41,7 +41,9 @@ class LanguageModelPort(Protocol):
 
     async def generate_embedding(self, text: str) -> list[float]: ...
 
-    async def generate_completion(self, prompt: str, system: str = "") -> str: ...
+    async def generate_completion(
+        self, prompt: str, system: str = "", temperature: float | None = None
+    ) -> str: ...
 
 
 @runtime_checkable

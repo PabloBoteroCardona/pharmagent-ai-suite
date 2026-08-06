@@ -67,6 +67,27 @@ export function latencyBadge(elapsedMs: number, engineLabel: string): string {
   return `<span class="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-3 py-0.5 font-mono text-xs font-semibold text-sky-700">⚡ ${Math.round(elapsedMs)}ms · ${escapeHtml(engineLabel)}</span>`;
 }
 
+/**
+ * CIMA no expone ningún endpoint de interacciones farmacológicas — solo fichas técnicas y
+ * prospectos. Cuando ninguna combinación de la petición está en la base curada interna, el
+ * veredicto completo viene del razonamiento libre de un LLM, sin verificación contra ninguna
+ * base de datos clínica oficial. Mostrar esto explícito, no solo como un chip pequeño, para
+ * que nunca se confunda con un dato verificado por la AEMPS.
+ */
+export function llmOnlyDisclaimerHtml(): string {
+  return `
+    <div class="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+      <span>⚠️</span>
+      <p>
+        Ninguno de estos fármacos está en la base curada interna. Este resultado es
+        <strong>razonamiento de un modelo de lenguaje</strong>, no un dato verificado contra
+        CIMA/AEMPS (que no publica un registro de interacciones) ni contra ninguna base de
+        datos clínica oficial — puede variar en fraseo entre consultas y debe confirmarse
+        siempre con un profesional sanitario.
+      </p>
+    </div>`;
+}
+
 export function interactionCardHtml(interaction: InteractionResult): string {
   const border = SEVERITY_BORDER[interaction.severity] ?? "border-l-slate-400";
   return `

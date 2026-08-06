@@ -58,19 +58,24 @@ class OllamaClient:
             return []
 
     async def generate_completion(
-        self, prompt: str, system: str = "", model: str = DEFAULT_COMPLETION_MODEL
+        self,
+        prompt: str,
+        system: str = "",
+        model: str = DEFAULT_COMPLETION_MODEL,
+        temperature: float | None = None,
     ) -> str:
         """Genera texto a partir de `prompt`. Devuelve `""` si falla la conexión o Ollama no está disponible."""
+        payload: dict[str, object] = {
+            "model": model,
+            "prompt": prompt,
+            "system": system,
+            "stream": False,
+        }
+        if temperature is not None:
+            payload["options"] = {"temperature": temperature}
+
         try:
-            response = await self._client.post(
-                "/api/generate",
-                json={
-                    "model": model,
-                    "prompt": prompt,
-                    "system": system,
-                    "stream": False,
-                },
-            )
+            response = await self._client.post("/api/generate", json=payload)
             response.raise_for_status()
             return response.json().get("response", "")
         except (httpx.HTTPError, json.JSONDecodeError):

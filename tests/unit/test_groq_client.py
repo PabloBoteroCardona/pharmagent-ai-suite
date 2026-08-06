@@ -175,6 +175,40 @@ class TestGenerateCompletion:
         assert request.headers["Authorization"] == "Bearer secret-groq-key"
 
     @pytest.mark.asyncio
+    async def test_forwards_temperature_when_given(self) -> None:
+        captured_requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured_requests.append(request)
+            return httpx.Response(
+                200, json={"choices": [{"message": {"content": "ok"}}]}
+            )
+
+        client = _client_with_transport(handler)
+
+        await client.generate_completion(prompt="¿dosis?", temperature=0.0)
+
+        body = json.loads(captured_requests[0].content)
+        assert body["temperature"] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_omits_temperature_field_when_not_given(self) -> None:
+        captured_requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured_requests.append(request)
+            return httpx.Response(
+                200, json={"choices": [{"message": {"content": "ok"}}]}
+            )
+
+        client = _client_with_transport(handler)
+
+        await client.generate_completion(prompt="¿dosis?")
+
+        body = json.loads(captured_requests[0].content)
+        assert "temperature" not in body
+
+    @pytest.mark.asyncio
     async def test_omits_system_message_when_system_is_empty(self) -> None:
         captured_requests: list[httpx.Request] = []
 

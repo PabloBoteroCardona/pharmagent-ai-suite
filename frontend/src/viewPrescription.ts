@@ -2,7 +2,15 @@ import { ApiError, processPrescription, searchDrugs } from "./api";
 import { GEMINI_ENGINE_LABEL } from "./constants";
 import { showToast } from "./toast";
 import type { ExtractedDrugItem, ProcessPrescriptionResponse } from "./types";
-import { escapeHtml, interactionCardHtml, latencyBadge, skeletonCardHtml, sourceChip, verdictBanner } from "./ui";
+import {
+  escapeHtml,
+  interactionCardHtml,
+  latencyBadge,
+  llmOnlyDisclaimerHtml,
+  skeletonCardHtml,
+  sourceChip,
+  verdictBanner,
+} from "./ui";
 
 function renderExtraction(data: ProcessPrescriptionResponse, elapsedMs: number): string {
   const drugsHtml = data.prescription.drugs.length
@@ -31,6 +39,7 @@ function renderExtraction(data: ProcessPrescriptionResponse, elapsedMs: number):
       ? '<p class="text-sm text-slate-500">No se requiere verificación de interacciones: se detectó menos de 2 fármacos en la receta.</p>'
       : `
         <div class="flex flex-wrap items-center gap-2">${verdictBanner(safety.verdict)}</div>
+        ${safety.interactions.some((i) => i.source === "llm") ? `<div class="mt-2">${llmOnlyDisclaimerHtml()}</div>` : ""}
         <div class="mt-2 space-y-2">
           ${
             safety.interactions.length

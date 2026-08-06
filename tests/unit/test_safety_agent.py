@@ -17,12 +17,16 @@ class FakeLanguageModel:
     def __init__(self, completion_response: str) -> None:
         self._completion_response = completion_response
         self.received_prompts: list[tuple[str, str]] = []
+        self.received_temperatures: list[float | None] = []
 
     async def generate_embedding(self, text: str) -> list[float]:
         raise NotImplementedError
 
-    async def generate_completion(self, prompt: str, system: str = "") -> str:
+    async def generate_completion(
+        self, prompt: str, system: str = "", temperature: float | None = None
+    ) -> str:
         self.received_prompts.append((prompt, system))
+        self.received_temperatures.append(temperature)
         return self._completion_response
 
 
@@ -247,3 +251,91 @@ class TestSafetyCheckAgentLLMAssisted:
         assert "FarmacoX" in prompt
         assert "FarmacoY" in prompt
         assert "seguridad farmacológica" in system
+
+    @pytest.mark.asyncio
+    async def test_requests_deterministic_output_from_language_model(self) -> None:
+        """Regresión: sin `temperature=0.0`, Groq muestrea la respuesta y la misma consulta
+        de interacciones puede devolver severidad/descripción distintas en cada petición —
+        inaceptable para un veredicto de seguridad clínica (bug real reportado por el
+        usuario con Heparina/Lixiana/Aspirina, ver .memory/BUGS.md)."""
+        language_model = FakeLanguageModel('{"interactions": []}')
+        agent = SafetyCheckAgent(language_model=language_model)
+
+        await agent.check_interactions(["FarmacoX", "FarmacoY"])
+
+        assert language_model.received_temperatures == [0.0]
+
+    @pytest.mark.asyncio
+    async def test_same_drug_set_produces_identical_prompt_regardless_of_input_order(
+        self,
+    ) -> None:
+        language_model = FakeLanguageModel('{"interactions": []}')
+        agent = SafetyCheckAgent(language_model=language_model)
+
+        await agent.check_interactions(["Heparina", "Lixiana", "Aspirina"])
+        await agent.check_interactions(["Aspirina", "Heparina", "Lixiana"])
+
+        prompt_a, _ = language_model.received_prompts[0]
+        prompt_b, _ = language_model.received_prompts[1]
+        assert prompt_a == prompt_b
+
+    @pytest.mark.asyncio
+    async def test_llm_pair_order_is_canonicalized_alphabetically(self) -> None:
+        """El modelo puede etiquetar cualquiera de los dos fármacos como "primary_drug" de
+        forma arbitraria (no tiene significado causal) — se normaliza para que la misma
+        pareja siempre se muestre en el mismo orden, en vez de "voltearse" visualmente entre
+        peticiones idénticas."""
+        response = json.dumps(
+            {
+                "interactions": [
+                    {
+                        "primary_drug": "lixiana",
+                        "secondary_drug": "heparina",
+                        "severity": "HIGH",
+                        "description": "Interacción hipotética.",
+                        "clinical_recommendation": "Evitar la combinación.",
+                    }
+                ],
+                "uncertain": False,
+            }
+        )
+        agent = SafetyCheckAgent(language_model=FakeLanguageModel(response))
+
+        result = await agent.check_interactions(["Heparina", "Lixiana"])
+
+        assert result["interactions"][0]["primary_drug"] == "heparina"
+        assert result["interactions"][0]["secondary_drug"] == "lixiana"
+
+    @pytest.mark.asyncio
+    async def test_llm_interactions_list_is_sorted_for_stable_display_order(
+        self,
+    ) -> None:
+        response = json.dumps(
+            {
+                "interactions": [
+                    {
+                        "primary_drug": "lixiana",
+                        "secondary_drug": "aspirina",
+                        "severity": "LOW",
+                        "description": "d1",
+                        "clinical_recommendation": "r1",
+                    },
+                    {
+                        "primary_drug": "heparina",
+                        "secondary_drug": "aspirina",
+                        "severity": "LOW",
+                        "description": "d2",
+                        "clinical_recommendation": "r2",
+                    },
+                ],
+                "uncertain": False,
+            }
+        )
+        agent = SafetyCheckAgent(language_model=FakeLanguageModel(response))
+
+        result = await agent.check_interactions(["Heparina", "Lixiana", "Aspirina"])
+
+        pairs = [
+            (i["primary_drug"], i["secondary_drug"]) for i in result["interactions"]
+        ]
+        assert pairs == sorted(pairs)

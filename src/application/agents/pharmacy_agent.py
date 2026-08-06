@@ -91,8 +91,12 @@ class RAGPharmAgent:
         else:
             system_prompt = f"{SYSTEM_PROMPT}\n\n{NO_CONTEXT_NOTE}"
 
+        # `temperature=0.0`: la respuesta cita datos clínicos (dosis, contraindicaciones)
+        # extraídos textualmente del contexto — debe ser determinista para la misma
+        # pregunta, no variar entre peticiones por muestreo del LLM (mismo razonamiento que
+        # `SafetyCheckAgent._check_with_language_model`, ver `.memory/BUGS.md`).
         answer = await self._language_model.generate_completion(
-            prompt=query, system=system_prompt
+            prompt=query, system=system_prompt, temperature=0.0
         )
 
         return {

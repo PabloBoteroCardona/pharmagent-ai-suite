@@ -172,9 +172,16 @@ class SafetyCheckAgent:
         return {"interactions": [], "verdict": "apto"}
 
     async def _check_with_language_model(self, drug_names: list[str]) -> dict:
-        prompt = "Fármacos a evaluar: " + ", ".join(drug_names)
+        # `sorted()` normaliza el orden de entrada: el mismo conjunto de fármacos siempre
+        # produce el mismo prompt exacto, sin importar el orden en que el usuario los añadió
+        # en la UI. `temperature=0.0` fuerza salida determinista (muestreo greedy) — sin
+        # esto, Groq usa su temperatura por omisión y la misma consulta puede devolver
+        # severidad, descripción o incluso qué fármaco es "primary_drug" distintos en cada
+        # petición: inaceptable para un veredicto de seguridad clínica (bug real reportado
+        # por el usuario, ver .memory/BUGS.md).
+        prompt = "Fármacos a evaluar: " + ", ".join(sorted(drug_names))
         raw_response = await self._language_model.generate_completion(
-            prompt=prompt, system=LLM_SYSTEM_PROMPT
+            prompt=prompt, system=LLM_SYSTEM_PROMPT, temperature=0.0
         )
         parsed = self._parse_llm_response(raw_response)
 
@@ -184,7 +191,16 @@ class SafetyCheckAgent:
             return {"interactions": [], "verdict": "requiere_revision_medica"}
 
         entries, uncertain = parsed
-        serialized = [self._serialize_llm_entry(entry) for entry in entries]
+        # Orden del par canonicalizado alfabéticamente (no el que el modelo eligiera como
+        # "primary"/"secondary", que no tiene significado causal — `_interaction_applies`
+        # ya trata los pares curados como no ordenados) y lista completa ordenada por par:
+        # así la misma combinación de fármacos siempre se presenta en el mismo orden visual,
+        # incluso si el modelo reporta las interacciones en un orden distinto entre
+        # peticiones.
+        serialized = sorted(
+            (self._serialize_llm_entry(entry) for entry in entries),
+            key=lambda item: (item["primary_drug"], item["secondary_drug"]),
+        )
 
         if uncertain:
             return {"interactions": serialized, "verdict": "requiere_revision_medica"}
@@ -259,9 +275,12 @@ class SafetyCheckAgent:
 
     @staticmethod
     def _serialize_llm_entry(entry: dict) -> dict:
+        primary_drug, secondary_drug = sorted(
+            (entry["primary_drug"], entry["secondary_drug"])
+        )
         return {
-            "primary_drug": entry["primary_drug"],
-            "secondary_drug": entry["secondary_drug"],
+            "primary_drug": primary_drug,
+            "secondary_drug": secondary_drug,
             "severity": entry["severity"],
             "description": entry["description"],
             "clinical_recommendation": entry["clinical_recommendation"],

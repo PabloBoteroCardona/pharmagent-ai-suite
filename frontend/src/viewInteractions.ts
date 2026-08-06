@@ -1,7 +1,14 @@
 import { ApiError, checkInteractions } from "./api";
 import { GROQ_ENGINE_LABEL } from "./constants";
 import { showToast } from "./toast";
-import { escapeHtml, interactionCardHtml, latencyBadge, skeletonListHtml, verdictBanner } from "./ui";
+import {
+  escapeHtml,
+  interactionCardHtml,
+  latencyBadge,
+  llmOnlyDisclaimerHtml,
+  skeletonListHtml,
+  verdictBanner,
+} from "./ui";
 
 export function initInteractionsView(): void {
   const addForm = document.getElementById("interactions-add-form") as HTMLFormElement;
@@ -50,11 +57,13 @@ export function initInteractionsView(): void {
         const cardsHtml = data.interactions.length
           ? data.interactions.map(interactionCardHtml).join("")
           : '<p class="text-sm text-emerald-700">No se han detectado interacciones conocidas entre los fármacos seleccionados.</p>';
+        const anyLlmSourced = data.interactions.some((i) => i.source === "llm");
         results.innerHTML = `
           <div class="flex flex-wrap items-center gap-2">
             ${verdictBanner(data.verdict)}
             ${latencyBadge(elapsedMs, GROQ_ENGINE_LABEL)}
           </div>
+          ${anyLlmSourced ? llmOnlyDisclaimerHtml() : ""}
           ${cardsHtml}`;
       } catch (error) {
         results.innerHTML = "";

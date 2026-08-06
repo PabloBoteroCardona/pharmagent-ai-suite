@@ -175,3 +175,20 @@ class TestAnswerConsultation:
             language_model.generate_completion.call_args.kwargs["prompt"]
             == "¿qué dosis es adecuada?"
         )
+
+    @pytest.mark.asyncio
+    async def test_requests_deterministic_output_from_language_model(self) -> None:
+        """Regresión: sin `temperature=0.0`, la misma pregunta sobre datos clínicos
+        (dosis, contraindicaciones) podía generar respuestas distintas entre peticiones por
+        muestreo del LLM — mismo problema real reportado por el usuario para
+        `SafetyCheckAgent` (ver .memory/BUGS.md), aplicable aquí por el mismo motivo."""
+        drug_service = _make_drug_service(
+            DrugSearchResult(drugs=[FAKE_DRUG], source="cache")
+        )
+        language_model = AsyncMock(spec=LanguageModelPort)
+        language_model.generate_completion.return_value = "respuesta"
+        agent = RAGPharmAgent(drug_service=drug_service, language_model=language_model)
+
+        await agent.answer_consultation("¿qué dosis es adecuada?")
+
+        assert language_model.generate_completion.call_args.kwargs["temperature"] == 0.0

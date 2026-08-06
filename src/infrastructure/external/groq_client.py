@@ -58,10 +58,20 @@ class GroqClient:
         return []
 
     async def generate_completion(
-        self, prompt: str, system: str = "", model: str | None = None
+        self,
+        prompt: str,
+        system: str = "",
+        model: str | None = None,
+        temperature: float | None = None,
     ) -> str:
         """Genera texto con Groq. Devuelve `""` si no hay API key configurada, o si falla
-        la conexión, la API o el parseo de la respuesta."""
+        la conexión, la API o el parseo de la respuesta.
+
+        `temperature`: por defecto Groq usa su propio valor por omisión (muestreo, no
+        determinista) si no se especifica. Los llamadores que devuelven datos de seguridad
+        clínica (`SafetyCheckAgent`, `RAGPharmAgent`) deben fijarlo a `0.0` explícitamente —
+        ver `.memory/BUGS.md` sobre por qué una respuesta de interacciones farmacológicas no
+        puede variar entre peticiones idénticas."""
         if not self._api_key:
             return ""
 
@@ -70,11 +80,18 @@ class GroqClient:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
+        payload: dict[str, object] = {
+            "model": model or self._model,
+            "messages": messages,
+        }
+        if temperature is not None:
+            payload["temperature"] = temperature
+
         try:
             response = await self._client.post(
                 "/chat/completions",
                 headers={"Authorization": f"Bearer {self._api_key}"},
-                json={"model": model or self._model, "messages": messages},
+                json=payload,
             )
             response.raise_for_status()
             choices = response.json().get("choices", [])

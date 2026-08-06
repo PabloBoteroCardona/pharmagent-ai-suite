@@ -159,3 +159,35 @@ class TestGenerateCompletion:
         assert captured_bodies[0]["system"] == "eres un asistente"
         assert captured_bodies[0]["model"] == "llama3"
         assert captured_bodies[0]["stream"] is False
+
+    @pytest.mark.asyncio
+    async def test_forwards_temperature_as_options_when_given(self) -> None:
+        captured_bodies: list[dict] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            import json
+
+            captured_bodies.append(json.loads(request.content))
+            return httpx.Response(200, json={"response": "ok"})
+
+        client = _client_with_transport(handler)
+
+        await client.generate_completion(prompt="¿dosis?", temperature=0.0)
+
+        assert captured_bodies[0]["options"] == {"temperature": 0.0}
+
+    @pytest.mark.asyncio
+    async def test_omits_options_field_when_temperature_not_given(self) -> None:
+        captured_bodies: list[dict] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            import json
+
+            captured_bodies.append(json.loads(request.content))
+            return httpx.Response(200, json={"response": "ok"})
+
+        client = _client_with_transport(handler)
+
+        await client.generate_completion(prompt="¿dosis?")
+
+        assert "options" not in captured_bodies[0]
