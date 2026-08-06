@@ -1,7 +1,7 @@
 import { ApiError, consult } from "./api";
+import { attachDrugSuggestions } from "./autocomplete";
 import { GROQ_ENGINE_LABEL } from "./constants";
 import { renderMarkdown } from "./markdown";
-import { pushHistory } from "./state";
 import { showToast } from "./toast";
 import type { ConsultationResponse } from "./types";
 import { escapeHtml, latencyBadge, skeletonCardHtml, sourceChip } from "./ui";
@@ -52,7 +52,6 @@ async function runConsult(query: string, drugName: string | null, results: HTMLD
 
   try {
     const { data, elapsedMs } = await consult(query, drugName ?? undefined);
-    pushHistory(query, drugName);
     placeholder.outerHTML = consultResultCardHtml(query, drugName, data, elapsedMs);
   } catch (error) {
     placeholder.remove();
@@ -60,11 +59,15 @@ async function runConsult(query: string, drugName: string | null, results: HTMLD
   }
 }
 
-export function initConsultView(onQuerySubmitted: () => void): void {
+export function initConsultView(): void {
   const form = document.getElementById("consult-form") as HTMLFormElement;
   const queryInput = document.getElementById("consult-query") as HTMLInputElement;
   const drugInput = document.getElementById("consult-drug-name") as HTMLInputElement;
   const results = document.getElementById("consult-results") as HTMLDivElement;
+  const clearButton = document.getElementById("consult-clear") as HTMLButtonElement;
+  const drugSuggestionsList = document.getElementById("consult-drug-suggestions") as HTMLDataListElement;
+
+  const drugSuggestions = attachDrugSuggestions(drugInput, drugSuggestionsList);
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -73,6 +76,11 @@ export function initConsultView(onQuerySubmitted: () => void): void {
     const drugName = drugInput.value.trim() || null;
     queryInput.value = "";
     drugInput.value = "";
-    void runConsult(query, drugName, results).then(onQuerySubmitted);
+    drugSuggestions.clear();
+    void runConsult(query, drugName, results);
+  });
+
+  clearButton.addEventListener("click", () => {
+    results.innerHTML = "";
   });
 }

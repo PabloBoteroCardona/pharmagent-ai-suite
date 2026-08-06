@@ -1,4 +1,5 @@
 import { ApiError, checkInteractions } from "./api";
+import { attachDrugSuggestions } from "./autocomplete";
 import { GROQ_ENGINE_LABEL } from "./constants";
 import { showToast } from "./toast";
 import {
@@ -15,7 +16,11 @@ export function initInteractionsView(): void {
   const drugInput = document.getElementById("interactions-drug-input") as HTMLInputElement;
   const chipsContainer = document.getElementById("interactions-drug-chips") as HTMLDivElement;
   const checkButton = document.getElementById("interactions-check-button") as HTMLButtonElement;
+  const clearButton = document.getElementById("interactions-clear") as HTMLButtonElement;
   const results = document.getElementById("interactions-results") as HTMLDivElement;
+  const drugSuggestionsList = document.getElementById("interactions-drug-suggestions") as HTMLDataListElement;
+
+  const drugSuggestions = attachDrugSuggestions(drugInput, drugSuggestionsList);
 
   let drugs: string[] = [];
 
@@ -38,6 +43,7 @@ export function initInteractionsView(): void {
     if (!value) return;
     drugs.push(value);
     drugInput.value = "";
+    drugSuggestions.clear();
     renderChips();
   });
 
@@ -56,7 +62,7 @@ export function initInteractionsView(): void {
         const { data, elapsedMs } = await checkInteractions(drugs);
         const cardsHtml = data.interactions.length
           ? data.interactions.map(interactionCardHtml).join("")
-          : '<p class="text-sm text-emerald-700">No se han detectado interacciones conocidas entre los fármacos seleccionados.</p>';
+          : '<p class="text-sm text-safe-700">No se han detectado interacciones conocidas entre los fármacos seleccionados.</p>';
         const anyLlmSourced = data.interactions.some((i) => i.source === "llm");
         results.innerHTML = `
           <div class="flex flex-wrap items-center gap-2">
@@ -70,6 +76,14 @@ export function initInteractionsView(): void {
         showToast(error instanceof ApiError ? error.message : "Error verificando interacciones.");
       }
     })();
+  });
+
+  clearButton.addEventListener("click", () => {
+    drugs = [];
+    renderChips();
+    results.innerHTML = "";
+    drugInput.value = "";
+    drugSuggestions.clear();
   });
 
   renderChips();

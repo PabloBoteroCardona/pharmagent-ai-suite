@@ -27,10 +27,10 @@ function renderExtraction(data: ProcessPrescriptionResponse, elapsedMs: number):
         </div>`,
         )
         .join("")
-    : '<p class="text-sm text-amber-700">No se identificó ningún fármaco en la imagen.</p>';
+    : '<p class="text-sm text-warning-700">No se identificó ningún fármaco en la imagen.</p>';
 
   const warningsHtml = data.prescription.advertencias
-    .map((warning) => `<p class="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">${escapeHtml(warning)}</p>`)
+    .map((warning) => `<p class="rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-800">${escapeHtml(warning)}</p>`)
     .join("");
 
   const safety = data.safety_check;
@@ -44,7 +44,7 @@ function renderExtraction(data: ProcessPrescriptionResponse, elapsedMs: number):
           ${
             safety.interactions.length
               ? safety.interactions.map(interactionCardHtml).join("")
-              : '<p class="text-sm text-emerald-700">No se han detectado interacciones conocidas entre los fármacos.</p>'
+              : '<p class="text-sm text-safe-700">No se han detectado interacciones conocidas entre los fármacos.</p>'
           }
         </div>`;
 
@@ -76,7 +76,7 @@ async function attachCimaCard(drug: ExtractedDrugItem, resultsRoot: HTMLElement)
   try {
     const { data } = await searchDrugs(drug.farmaco, 1);
     const hit = data.results[0];
-    card.className = "rounded-xl border border-slate-200 border-l-4 border-l-teal-600 bg-white p-4 shadow-sm";
+    card.className = "rounded-xl border border-slate-200 border-l-4 border-l-verified-600 bg-white p-4 shadow-sm";
     card.innerHTML = hit
       ? `
         <div class="mb-1 flex items-center gap-2">
@@ -97,13 +97,16 @@ async function attachCimaCard(drug: ExtractedDrugItem, resultsRoot: HTMLElement)
 export function initPrescriptionView(): void {
   const form = document.getElementById("prescription-form") as HTMLFormElement;
   const fileInput = document.getElementById("prescription-file") as HTMLInputElement;
+  const filenameLabel = document.getElementById("prescription-filename") as HTMLSpanElement;
   const preview = document.getElementById("prescription-preview") as HTMLImageElement;
   const submitButton = document.getElementById("prescription-submit") as HTMLButtonElement;
+  const clearButton = document.getElementById("prescription-clear") as HTMLButtonElement;
   const results = document.getElementById("prescription-results") as HTMLDivElement;
 
   fileInput.addEventListener("change", () => {
     const file = fileInput.files?.[0];
     submitButton.disabled = !file;
+    filenameLabel.textContent = file ? file.name : "Ningún archivo seleccionado";
     if (!file) {
       preview.classList.add("hidden");
       return;
@@ -128,5 +131,14 @@ export function initPrescriptionView(): void {
         showToast(error instanceof ApiError ? error.message : "Error procesando la receta.");
       }
     })();
+  });
+
+  clearButton.addEventListener("click", () => {
+    fileInput.value = "";
+    filenameLabel.textContent = "Ningún archivo seleccionado";
+    preview.classList.add("hidden");
+    preview.src = "";
+    submitButton.disabled = true;
+    results.innerHTML = "";
   });
 }

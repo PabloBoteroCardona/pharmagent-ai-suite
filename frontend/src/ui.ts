@@ -15,31 +15,31 @@ export function escapeHtml(value: string): string {
 }
 
 const SEVERITY_STYLE: Record<string, { classes: string; label: string }> = {
-  LOW: { classes: "bg-emerald-50 text-emerald-700 border-emerald-200", label: "BAJA" },
-  MEDIUM: { classes: "bg-amber-50 text-amber-700 border-amber-200", label: "MEDIA" },
-  HIGH: { classes: "bg-red-50 text-red-700 border-red-200", label: "ALTA" },
-  SEVERE: { classes: "bg-red-50 text-red-700 border-red-200", label: "GRAVE" },
+  LOW: { classes: "bg-safe-50 text-safe-700 border-safe-200", label: "BAJA" },
+  MEDIUM: { classes: "bg-warning-50 text-warning-700 border-warning-200", label: "MEDIA" },
+  HIGH: { classes: "bg-critical-50 text-critical-700 border-critical-200", label: "ALTA" },
+  SEVERE: { classes: "bg-critical-50 text-critical-700 border-critical-200", label: "GRAVE" },
 };
 
 const VERDICT_STYLE: Record<string, { classes: string; label: string }> = {
-  apto: { classes: "bg-emerald-100 text-emerald-800", label: "✅ APTO" },
-  apto_con_precaucion: { classes: "bg-amber-100 text-amber-800", label: "⚠️ APTO CON PRECAUCIÓN" },
-  requiere_revision_medica: { classes: "bg-red-100 text-red-800", label: "🛑 REQUIERE REVISIÓN MÉDICA" },
+  apto: { classes: "bg-safe-100 text-safe-800", label: "✅ APTO" },
+  apto_con_precaucion: { classes: "bg-warning-100 text-warning-800", label: "⚠️ APTO CON PRECAUCIÓN" },
+  requiere_revision_medica: { classes: "bg-critical-100 text-critical-800", label: "🛑 REQUIERE REVISIÓN MÉDICA" },
 };
 
 const SOURCE_STYLE: Record<string, { classes: string; label: string }> = {
-  cache: { classes: "bg-teal-50 text-teal-700 border-teal-200", label: "🗄️ Caché vectorial" },
-  live: { classes: "bg-sky-50 text-sky-700 border-sky-200", label: "🌐 CIMA en vivo" },
-  none: { classes: "bg-slate-100 text-slate-500 border-slate-200", label: "Sin fuente verificada" },
-  curated: { classes: "bg-teal-50 text-teal-700 border-teal-200", label: "🗄️ Base curada" },
-  llm: { classes: "bg-sky-50 text-sky-700 border-sky-200", label: "🤖 Razonamiento LLM" },
+  cache: { classes: "bg-verified-50 text-verified-700 border-verified-200", label: "🗄️ Caché vectorial" },
+  live: { classes: "bg-live-50 text-live-700 border-live-200", label: "🌐 CIMA en vivo" },
+  none: { classes: "bg-neutral-100 text-neutral-500 border-neutral-200", label: "Sin fuente verificada" },
+  curated: { classes: "bg-verified-50 text-verified-700 border-verified-200", label: "🗄️ Base curada" },
+  llm: { classes: "bg-live-50 text-live-700 border-live-200", label: "🤖 Razonamiento LLM" },
 };
 
 const SEVERITY_BORDER: Record<string, string> = {
-  LOW: "border-l-emerald-600",
-  MEDIUM: "border-l-amber-600",
-  HIGH: "border-l-red-600",
-  SEVERE: "border-l-red-600",
+  LOW: "border-l-safe-600",
+  MEDIUM: "border-l-warning-600",
+  HIGH: "border-l-critical-600",
+  SEVERE: "border-l-critical-600",
 };
 
 export function severityBadge(severity: Severity | string): string {
@@ -76,7 +76,7 @@ export function latencyBadge(elapsedMs: number, engineLabel: string): string {
  */
 export function llmOnlyDisclaimerHtml(): string {
   return `
-    <div class="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+    <div class="flex items-start gap-2 rounded-xl border border-warning-200 bg-warning-50 p-3 text-sm text-warning-800">
       <span>⚠️</span>
       <p>
         Ninguno de estos fármacos está en la base curada interna. Este resultado es
@@ -89,7 +89,7 @@ export function llmOnlyDisclaimerHtml(): string {
 }
 
 export function interactionCardHtml(interaction: InteractionResult): string {
-  const border = SEVERITY_BORDER[interaction.severity] ?? "border-l-slate-400";
+  const border = SEVERITY_BORDER[interaction.severity] ?? "border-l-neutral-400";
   return `
     <div class="rounded-xl border border-slate-200 border-l-4 ${border} bg-white p-4 shadow-sm">
       <div class="mb-2 flex flex-wrap items-center gap-2">

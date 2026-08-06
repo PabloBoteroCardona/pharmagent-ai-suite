@@ -19,80 +19,35 @@
       rel="stylesheet"
     />
   </head>
-  <body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
-    <div class="flex min-h-screen flex-col md:flex-row">
-      <!-- Barra superior (móvil) -->
-      <header
-        class="flex items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-3 md:hidden"
-      >
-        <div class="flex items-center gap-2 text-white">
-          <span class="text-xl">🧬</span>
-          <span class="text-lg font-extrabold tracking-tight">PharmAgent</span>
-        </div>
-        <button
-          id="sidebar-toggle"
-          type="button"
-          class="rounded-lg border border-slate-700 p-2 text-slate-200"
-          aria-label="Abrir menú"
-          aria-expanded="false"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round" />
-          </svg>
-        </button>
-      </header>
-
-      <!-- Sidebar -->
-      <aside
-        id="sidebar"
-        class="hidden w-full flex-col gap-6 border-b border-slate-800 bg-slate-900 p-6 text-slate-200 md:flex md:w-80 md:shrink-0 md:border-b-0 md:border-r"
-      >
-        <div class="hidden items-center gap-2 md:flex">
-          <span class="text-2xl">🧬</span>
-          <div>
-            <p class="text-lg font-extrabold tracking-tight text-white">PharmAgent</p>
-            <p class="text-xs text-slate-400">Asistencia clínica con trazabilidad AEMPS</p>
-          </div>
-        </div>
-
-        <section>
-          <h2 class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Estado de conexión
-          </h2>
-          <div id="status-list" class="space-y-1.5 text-sm"></div>
-          <button
-            id="status-refresh"
-            type="button"
-            class="mt-3 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-sky-500 hover:text-white"
-          >
-            🔄 Comprobar backend
-          </button>
-        </section>
-
-        <section class="flex min-h-0 flex-1 flex-col">
-          <div class="mb-2 flex items-center justify-between">
-            <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Búsquedas recientes
-            </h2>
-            <button id="history-clear" type="button" class="text-xs text-slate-500 hover:text-slate-300">
-              Limpiar
-            </button>
-          </div>
-          <div id="history-list" class="max-h-72 space-y-1 overflow-y-auto text-sm"></div>
-        </section>
-
-        <p class="text-xs text-slate-500">Fuente clínica: CIMA (AEMPS) · TFM PharmAgent</p>
-      </aside>
-
+  <body class="flex min-h-screen flex-col bg-slate-50 text-slate-900 antialiased">
       <!-- Contenido principal -->
-      <main class="flex-1 px-4 py-6 md:px-10 md:py-8">
-        <div class="mx-auto max-w-4xl">
-          <h1 class="hidden text-2xl font-extrabold tracking-tight text-slate-900 md:block">PharmAgent</h1>
-          <p class="hidden text-sm text-slate-500 md:block">
-            Asistencia farmacológica clínica potenciada por IA, con datos oficiales de CIMA/AEMPS.
-          </p>
+      <main class="flex-1 px-4 pb-8 pt-14 md:px-10 md:pb-10 md:pt-20 lg:px-16">
+        <div class="mx-auto max-w-5xl">
+          <div class="flex flex-col items-center text-center">
+            <div class="flex items-center gap-3">
+              <svg viewBox="0 0 24 24" class="h-10 w-10 shrink-0 md:h-12 md:w-12" aria-hidden="true">
+                <rect x="9" y="1.5" width="6" height="3.5" rx="1" fill="#0D9488" />
+                <rect x="5.5" y="5" width="13" height="17.5" rx="3.5" fill="#0284C7" />
+                <rect x="8" y="11" width="8" height="6" rx="1.2" fill="white" />
+                <path
+                  d="M12 12.2v3.6M10.2 14h3.6"
+                  stroke="#0284C7"
+                  stroke-width="1.3"
+                  stroke-linecap="round"
+                />
+              </svg>
+              <h1 class="text-4xl font-extrabold tracking-tight text-sky-900 md:text-5xl">PharmAgent</h1>
+            </div>
+            <p class="mx-auto mt-4 max-w-xl text-base font-semibold text-slate-600">
+              Asistencia farmacológica clínica potenciada por IA, con datos oficiales de CIMA/AEMPS.
+            </p>
+          </div>
 
-          <nav class="mt-6 flex gap-1 rounded-xl bg-slate-200/60 p-1" role="tablist" aria-label="Secciones">
+          <nav
+            class="mx-auto mt-6 flex max-w-lg gap-1 rounded-xl bg-slate-200/60 p-1"
+            role="tablist"
+            aria-label="Secciones"
+          >
             <button data-tab="consult" class="tab-button" role="tab" aria-selected="true">
               💬 Consulta Clínica
             </button>
@@ -108,41 +63,55 @@
           <section id="view-consult" data-view class="mt-6 space-y-5">
             <form
               id="consult-form"
-              class="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+              class="space-y-3 rounded-2xl border border-sky-800 bg-sky-900 p-4 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] md:p-6"
             >
               <div>
-                <label for="consult-drug-name" class="text-xs font-semibold text-slate-500">
-                  Nombre del fármaco (opcional, acota la búsqueda en CIMA solo para tu próxima pregunta)
+                <label for="consult-drug-name" class="text-xs font-semibold text-sky-200">
+                  Nombre del fármaco (recomendado: sin él, la búsqueda puede no encontrar el medicamento correcto)
                 </label>
                 <input
                   id="consult-drug-name"
                   type="text"
+                  autocomplete="off"
+                  list="consult-drug-suggestions"
                   placeholder="Ej. Naproxeno"
-                  class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                  class="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
                 />
+                <datalist id="consult-drug-suggestions"></datalist>
               </div>
               <div class="flex items-end gap-2">
                 <div class="flex-1">
-                  <label for="consult-query" class="text-xs font-semibold text-slate-500">
+                  <label for="consult-query" class="text-xs font-semibold text-sky-200">
                     Tu consulta clínica
                   </label>
                   <input
                     id="consult-query"
                     type="text"
                     required
-                    placeholder="¿Qué interacciones críticas existen entre Amiodarona y Warfarina?"
-                    class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                    autocomplete="off"
+                    spellcheck="true"
+                    placeholder="¿Qué dosis de Ibuprofeno es adecuada para un adulto?"
+                    class="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
                   />
                 </div>
                 <button
                   type="submit"
-                  class="shrink-0 rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-700"
+                  class="shrink-0 rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-500"
                 >
                   Preguntar
                 </button>
               </div>
             </form>
 
+            <div class="flex justify-end">
+              <button
+                id="consult-clear"
+                type="button"
+                class="text-xs font-semibold text-slate-500 transition hover:text-critical-700"
+              >
+                🗑️ Limpiar consultas
+              </button>
+            </div>
             <div id="consult-results" class="space-y-4"></div>
           </section>
 
@@ -150,33 +119,47 @@
           <section id="view-interactions" data-view class="mt-6 hidden space-y-5">
             <form
               id="interactions-add-form"
-              class="flex gap-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+              class="space-y-3 rounded-2xl border border-sky-800 bg-sky-900 p-4 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] md:p-6"
             >
-              <input
-                id="interactions-drug-input"
-                type="text"
-                placeholder="Nombre del fármaco"
-                class="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
-              />
+              <div class="flex gap-2">
+                <input
+                  id="interactions-drug-input"
+                  type="text"
+                  autocomplete="off"
+                  list="interactions-drug-suggestions"
+                  placeholder="Nombre del fármaco"
+                  class="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                />
+                <datalist id="interactions-drug-suggestions"></datalist>
+                <button
+                  type="submit"
+                  class="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-500"
+                >
+                  ➕ Añadir
+                </button>
+              </div>
+
+              <div id="interactions-drug-chips" class="flex flex-wrap gap-2"></div>
+
               <button
-                type="submit"
-                class="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
+                id="interactions-check-button"
+                type="button"
+                disabled
+                class="w-full rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
-                ➕ Añadir
+                🛡️ Verificar interacciones
               </button>
             </form>
 
-            <div id="interactions-drug-chips" class="flex flex-wrap gap-2"></div>
-
-            <button
-              id="interactions-check-button"
-              type="button"
-              disabled
-              class="w-full rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-            >
-              🛡️ Verificar interacciones
-            </button>
-
+            <div class="flex justify-end">
+              <button
+                id="interactions-clear"
+                type="button"
+                class="text-xs font-semibold text-slate-500 transition hover:text-critical-700"
+              >
+                🗑️ Limpiar
+              </button>
+            </div>
             <div id="interactions-results" class="space-y-4"></div>
           </section>
 
@@ -184,17 +167,26 @@
           <section id="view-prescription" data-view class="mt-6 hidden space-y-5">
             <form
               id="prescription-form"
-              class="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+              class="space-y-3 rounded-2xl border border-sky-800 bg-sky-900 p-4 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] md:p-6"
             >
               <div>
-                <label for="prescription-file" class="text-xs font-semibold text-slate-500">
-                  Foto de la receta
+                <p class="text-center text-xs font-semibold text-sky-200">Foto de la receta</p>
+                <label
+                  for="prescription-file"
+                  class="mt-1 flex cursor-pointer flex-row flex-wrap items-center justify-center gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-center transition hover:border-sky-400 hover:bg-sky-50"
+                >
+                  <span class="rounded-lg bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-700">
+                    Seleccionar archivo
+                  </span>
+                  <span id="prescription-filename" class="text-xs text-slate-500">
+                    Ningún archivo seleccionado
+                  </span>
                 </label>
                 <input
                   id="prescription-file"
                   type="file"
                   accept="image/png,image/jpeg,image/webp"
-                  class="mt-1 block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-sky-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-sky-700 hover:file:bg-sky-100"
+                  class="hidden"
                 />
               </div>
               <img
@@ -206,17 +198,74 @@
                 id="prescription-submit"
                 type="submit"
                 disabled
-                class="w-full rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                class="w-full rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
                 🔎 Procesar receta
               </button>
             </form>
 
+            <div class="flex justify-end">
+              <button
+                id="prescription-clear"
+                type="button"
+                class="text-xs font-semibold text-slate-500 transition hover:text-critical-700"
+              >
+                🗑️ Limpiar
+              </button>
+            </div>
             <div id="prescription-results" class="space-y-4"></div>
           </section>
         </div>
       </main>
-    </div>
+
+    <!-- Footer -->
+    <footer class="border-t border-sky-800 bg-sky-900 text-sky-100">
+      <div class="mx-auto grid max-w-5xl gap-x-10 gap-y-4 px-4 py-4 sm:grid-cols-2 md:px-10 lg:grid-cols-4 lg:px-16">
+        <div>
+          <div class="flex items-center gap-2">
+            <svg viewBox="0 0 24 24" class="h-5 w-5 shrink-0" aria-hidden="true">
+              <rect x="9" y="1.5" width="6" height="3.5" rx="1" fill="#5EEAD4" />
+              <rect x="5.5" y="5" width="13" height="17.5" rx="3.5" fill="#38BDF8" />
+              <rect x="8" y="11" width="8" height="6" rx="1.2" fill="white" />
+              <path d="M12 12.2v3.6M10.2 14h3.6" stroke="#0284C7" stroke-width="1.3" stroke-linecap="round" />
+            </svg>
+            <p class="text-sm font-extrabold tracking-tight text-emerald-400">PharmAgent</p>
+          </div>
+          <p class="mt-2 text-xs text-sky-300">
+            Asistencia farmacológica clínica con trazabilidad completa a fuentes oficiales.
+          </p>
+        </div>
+
+        <div>
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-sky-400">Fuentes de datos</h3>
+          <ul class="mt-2 space-y-1 text-xs text-sky-200">
+            <li>
+              <a class="hover:text-white hover:underline" href="https://cima.aemps.es" target="_blank" rel="noopener">
+                Agencia Española de Medicamentos (AEMPS - CIMA)
+              </a>
+            </li>
+            <li>Motor de Inteligencia Artificial Clínica</li>
+            <li>Base de Datos de Prospectos Oficiales</li>
+          </ul>
+        </div>
+
+        <div>
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-sky-400">Aviso clínico</h3>
+          <p class="mt-2 text-xs text-sky-200">
+            No sustituye el criterio de un profesional sanitario. Confirma siempre las decisiones
+            clínicas con tu médico o farmacéutico.
+          </p>
+        </div>
+
+        <div>
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-sky-400">Estado de conexión</h3>
+          <div id="status-list" class="mt-2 space-y-1 text-xs text-sky-200"></div>
+        </div>
+      </div>
+      <div class="border-t border-sky-800 px-4 py-2 text-center text-xs text-sky-400 md:px-10">
+        © <span id="footer-year"></span> PharmAgent. Datos clínicos cortesía de CIMA (AEMPS).
+      </div>
+    </footer>
 
     <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2"></div>
 

@@ -1,5 +1,54 @@
 @import "tailwindcss";
 
+/*
+ * Paleta clínica de PharmAgent — única fuente de verdad para los colores con
+ * significado clínico (severidad, veredicto, procedencia de los datos, estado de
+ * conexión). Cada token es un alias de la paleta estándar de Tailwind (mismo valor,
+ * cero diferencia visual), así que el nombre en el HTML/TS dice lo que el color
+ * *significa* (safe/warning/critical/verified/live/neutral) en vez de qué familia de
+ * Tailwind se usó — y queda definido una sola vez aquí, no repetido como clases
+ * sueltas en cada vista ni, peor, como hex sin relación con ninguna clase (ver bug
+ * corregido en `main.ts`: los puntos de estado usaban hex a mano que había divergido
+ * de la paleta real usada en el resto de badges).
+ */
+@theme {
+  --color-safe-50: var(--color-emerald-50);
+  --color-safe-100: var(--color-emerald-100);
+  --color-safe-200: var(--color-emerald-200);
+  --color-safe-600: var(--color-emerald-600);
+  --color-safe-700: var(--color-emerald-700);
+  --color-safe-800: var(--color-emerald-800);
+
+  --color-warning-50: var(--color-amber-50);
+  --color-warning-100: var(--color-amber-100);
+  --color-warning-200: var(--color-amber-200);
+  --color-warning-600: var(--color-amber-600);
+  --color-warning-700: var(--color-amber-700);
+  --color-warning-800: var(--color-amber-800);
+
+  --color-critical-50: var(--color-red-50);
+  --color-critical-100: var(--color-red-100);
+  --color-critical-200: var(--color-red-200);
+  --color-critical-600: var(--color-red-600);
+  --color-critical-700: var(--color-red-700);
+  --color-critical-800: var(--color-red-800);
+
+  --color-verified-50: var(--color-teal-50);
+  --color-verified-200: var(--color-teal-200);
+  --color-verified-600: var(--color-teal-600);
+  --color-verified-700: var(--color-teal-700);
+
+  --color-live-50: var(--color-sky-50);
+  --color-live-200: var(--color-sky-200);
+  --color-live-600: var(--color-sky-600);
+  --color-live-700: var(--color-sky-700);
+
+  --color-neutral-100: var(--color-slate-100);
+  --color-neutral-200: var(--color-slate-200);
+  --color-neutral-400: var(--color-slate-400);
+  --color-neutral-500: var(--color-slate-500);
+}
+
 :root {
   font-family: "Inter", "Segoe UI", sans-serif;
 }
@@ -12,10 +61,10 @@ pre {
 
 @layer components {
   .tab-button {
-    @apply flex-1 rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 transition hover:text-slate-900;
+    @apply flex-1 rounded-lg border border-transparent px-3 py-2 text-sm font-semibold text-slate-600 transition hover:text-slate-900;
   }
   .tab-button[aria-selected="true"] {
-    @apply bg-white text-sky-700 shadow-sm;
+    @apply border-sky-600 bg-white text-sky-700 shadow-sm;
   }
 
   .markdown-body :where(p) {
