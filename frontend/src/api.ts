@@ -14,6 +14,10 @@ import type {
 } from "./types";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
+// Solo se envía si está definida (despliegue público) — en desarrollo local la API no exige
+// ninguna, ver `Settings.api_key`/`security.py`. Nota: al vivir en el bundle del frontend,
+// cualquiera puede leerla desde las DevTools — frena abuso anónimo, no es un secreto real.
+const API_KEY = import.meta.env.VITE_API_KEY;
 const REQUEST_TIMEOUT_MS = 60_000;
 const HEALTH_TIMEOUT_MS = 5_000;
 
@@ -24,12 +28,22 @@ export interface ApiResult<T> {
   elapsedMs: number;
 }
 
+function buildHeaders(extra?: HeadersInit): Headers {
+  const headers = new Headers(extra);
+  if (API_KEY) headers.set("X-API-Key", API_KEY);
+  return headers;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<ApiResult<T>> {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const started = performance.now();
   try {
-    const response = await fetch(`${API_BASE_URL}${path}`, { ...init, signal: controller.signal });
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      headers: buildHeaders(init.headers),
+      signal: controller.signal,
+    });
     const elapsedMs = performance.now() - started;
     if (!response.ok) {
       const text = await response.text();

@@ -93,6 +93,9 @@
                     placeholder="¿Qué dosis de Ibuprofeno es adecuada para un adulto?"
                     class="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
                   />
+                  <p class="mt-1 text-[11px] text-sky-300">
+                    No incluyas datos personales (nombre, DNI) en tu pregunta.
+                  </p>
                 </div>
                 <button
                   type="submit"
@@ -121,22 +124,27 @@
               id="interactions-add-form"
               class="space-y-3 rounded-2xl border border-sky-800 bg-sky-900 p-4 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] md:p-6"
             >
-              <div class="flex gap-2">
-                <input
-                  id="interactions-drug-input"
-                  type="text"
-                  autocomplete="off"
-                  list="interactions-drug-suggestions"
-                  placeholder="Nombre del fármaco"
-                  class="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
-                />
-                <datalist id="interactions-drug-suggestions"></datalist>
-                <button
-                  type="submit"
-                  class="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-500"
-                >
-                  ➕ Añadir
-                </button>
+              <div>
+                <div class="flex gap-2">
+                  <input
+                    id="interactions-drug-input"
+                    type="text"
+                    autocomplete="off"
+                    list="interactions-drug-suggestions"
+                    placeholder="Nombre del fármaco"
+                    class="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                  />
+                  <datalist id="interactions-drug-suggestions"></datalist>
+                  <button
+                    type="submit"
+                    class="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-500"
+                  >
+                    ➕ Añadir
+                  </button>
+                </div>
+                <p class="mt-1 text-[11px] text-sky-300">
+                  Añade solo nombres de fármaco, sin datos personales.
+                </p>
               </div>
 
               <div id="interactions-drug-chips" class="flex flex-wrap gap-2"></div>

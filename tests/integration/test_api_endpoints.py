@@ -8,6 +8,7 @@ CIMA, Ollama, PostgreSQL ni Gemini reales.
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from src.infrastructure.api.main import app
@@ -15,6 +16,7 @@ from src.infrastructure.api.routers.pharmacy_router import (
     get_cima_client,
     get_drug_repository,
 )
+from src.infrastructure.config.settings import settings
 from tests.integration.conftest import (
     FAKE_DRUG,
     FAKE_LIVE_DRUG_DETAIL,
@@ -259,9 +261,8 @@ class TestProcessPrescriptionEndpoint:
 
 
 class TestNoAuthenticationRequired:
-    """La API REST se sirve abierta para consumo del frontend local (`frontend/`) — ningún
-    endpoint exige la cabecera `X-API-Key`, se envíe o no. Decisión deliberada, apropiada
-    solo para desarrollo/demo local."""
+    """Con `settings.api_key` sin configurar (valor por defecto) — el caso de desarrollo/demo
+    local — ningún endpoint exige la cabecera `X-API-Key`, se envíe o no."""
 
     def test_accepts_request_without_any_api_key_header(
         self, client: TestClient
@@ -283,5 +284,60 @@ class TestNoAuthenticationRequired:
             json={"drugs": ["Paracetamol", "Omeprazol"]},
             headers={"X-API-Key": "cualquier-cosa"},
         )
+
+        assert response.status_code == 200
+
+
+class TestApiKeyAuthenticationWhenConfigured:
+    """Con `settings.api_key` configurada — el caso de un despliegue público — pharmacy_router
+    exige la cabecera `X-API-Key` correcta en cada petición. `/health` (fuera de
+    pharmacy_router) no se ve afectado."""
+
+    def test_rejects_request_without_api_key_header(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(settings, "api_key", "secret-key")
+
+        response = client.post(
+            "/api/v1/pharmacy/check-interactions",
+            json={"drugs": ["Paracetamol", "Omeprazol"]},
+        )
+
+        assert response.status_code == 401
+
+    def test_rejects_request_with_wrong_api_key(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(settings, "api_key", "secret-key")
+
+        response = client.post(
+            "/api/v1/pharmacy/check-interactions",
+            json={"drugs": ["Paracetamol", "Omeprazol"]},
+            headers={"X-API-Key": "wrong-key"},
+        )
+
+        assert response.status_code == 401
+
+    def test_accepts_request_with_correct_api_key(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(settings, "api_key", "secret-key")
+
+        response = client.post(
+            "/api/v1/pharmacy/check-interactions",
+            json={"drugs": ["Paracetamol", "Omeprazol"]},
+            headers={"X-API-Key": "secret-key"},
+        )
+
+        assert response.status_code == 200
+
+    def test_health_endpoint_ignores_api_key_requirement(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`/health` vive en `main.py`, fuera de `pharmacy_router` — un proveedor de
+        despliegue debe poder comprobarlo sin conocer la API key."""
+        monkeypatch.setattr(settings, "api_key", "secret-key")
+
+        response = client.get("/health")
 
         assert response.status_code == 200

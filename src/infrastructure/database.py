@@ -20,7 +20,12 @@ from src.infrastructure.config.settings import settings
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-async_engine = create_async_engine(settings.database_url, connect_args={"ssl": False})
+# `settings.database_ssl` (por defecto `False`): el Postgres de docker-compose.yml no ofrece
+# SSL, así que hay que desactivarlo explícitamente (asyncpg lo exige explícito, no asume). Un
+# Postgres gestionado en un proveedor de despliegue normalmente sí lo exige — con
+# `DATABASE_SSL=true` se omite `connect_args` por completo y asyncpg negocia SSL por defecto.
+connect_args: dict[str, object] = {} if settings.database_ssl else {"ssl": False}
+async_engine = create_async_engine(settings.database_url, connect_args=connect_args)
 
 AsyncSessionFactory = async_sessionmaker(
     bind=async_engine,

@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     database_url: str = (
         "postgresql+asyncpg://pharmagent:pharmagent_pass@127.0.0.1:5433/pharmagent_db"
     )
+    # `False` (por defecto) desactiva SSL explícitamente — necesario para el Postgres de
+    # docker-compose.yml, que no lo ofrece. Un Postgres gestionado en un proveedor de
+    # despliegue (p. ej. Render) normalmente lo exige; poner `DATABASE_SSL=true` ahí, o la
+    # conexión falla. Ver database.py.
+    database_ssl: bool = False
 
     ollama_base_url: str = "http://localhost:11434"
     cima_base_url: str = "https://cima.aemps.es/cima/rest"
@@ -52,6 +57,17 @@ class Settings(BaseSettings):
     # Lista de orígenes permitidos por CORS. `["*"]` (por defecto) es apropiado para
     # desarrollo local; en producción debe restringirse a los orígenes reales del cliente.
     cors_allowed_origins: list[str] = ["*"]
+
+    # `None`/vacío (por defecto) desactiva la autenticación por completo — apropiado para
+    # desarrollo local, donde el frontend y la API corren en la misma máquina. Poner
+    # `API_KEY=<valor>` activa la comprobación de la cabecera `X-API-Key` en todo
+    # `pharmacy_router` (ver security.py) — necesario antes de exponer la API a Internet.
+    api_key: str | None = None
+
+    # Límite de peticiones por IP en pharmacy_router (protege de abuso/coste descontrolado
+    # en Groq/Gemini si la API queda expuesta públicamente). Formato de `slowapi`/`limits`:
+    # "<cantidad>/<periodo>".
+    rate_limit: str = "30/minute"
 
 
 @lru_cache

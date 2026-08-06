@@ -195,7 +195,12 @@ class FakePrescriptionRecordRepository:
 
 @pytest.fixture
 def client() -> TestClient:
-    """`TestClient` con las dependencias externas sustituidas por dobles en memoria."""
+    """`TestClient` con las dependencias externas sustituidas por dobles en memoria.
+
+    Desactiva el rate limiting (`app.state.limiter`, ver `main.py`) durante los tests: está
+    pensado para limitar abuso en producción, no para acotar cuántas peticiones puede hacer
+    la propia suite en una sesión — sin esto, sumar suficientes tests que llamen a la API
+    haría fallar la suite de forma intermitente por un 429, no por un bug real."""
     app.dependency_overrides[get_cima_client] = lambda: FakeCimaClient()
     app.dependency_overrides[get_ollama_client] = lambda: FakeOllamaClient()
     app.dependency_overrides[get_groq_client] = lambda: FakeGroqClient()
@@ -204,8 +209,11 @@ def client() -> TestClient:
     app.dependency_overrides[get_prescription_record_repository] = lambda: (
         FakePrescriptionRecordRepository()
     )
+    app.state.limiter.enabled = False
 
     with TestClient(app) as test_client:
         yield test_client
+
+    app.state.limiter.enabled = True
 
     app.dependency_overrides.clear()

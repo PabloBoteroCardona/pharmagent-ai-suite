@@ -14,7 +14,7 @@ de fichas técnicas oficiales de medicamentos autorizados en España (AEMPS/CIMA
 - [Frontend (SPA)](#frontend-spa)
 - [Imágenes del proyecto](#imágenes-del-proyecto)
 - [Endpoints de la API](#endpoints-de-la-api)
-- [CORS](#cors)
+- [Seguridad en un despliegue público](#seguridad-en-un-despliegue-público)
 - [Pruebas automatizadas y cobertura](#pruebas-automatizadas-y-cobertura)
 - [Evaluación cuantitativa](#evaluación-cuantitativa)
 - [Migraciones de base de datos](#migraciones-de-base-de-datos)
@@ -53,7 +53,8 @@ paciente.
 
 La otra llamada a un proveedor externo (Google Gemini) es la comprensión multimodal de
 imágenes de recetas, que tampoco tiene alternativa local viable con calidad suficiente —
-aquí el riesgo de privacidad es mayor y se documenta sin suavizarlo: Gemini recibe la
+aquí el riesgo de privacidad es mayor y se documenta sin suavizarlo (decisión completa en
+[ADR 002](docs/adr/002-datos-personales-foto-receta.md)): Gemini recibe la
 **imagen completa** de la receta, y una receta real puede llevar visibles nombre del
 paciente, DNI/NIE o dirección. Ni un aviso ni una casilla de confirmación cambian quién es
 el responsable del tratamiento de esos datos ante el RGPD/LOPDGDD — sigue siendo quien opera
@@ -88,6 +89,7 @@ distinta según el entorno:
 | LLM multimodal remoto | Google Gemini (`google-genai`, modelo `gemini-flash-latest`), exclusivo para extracción de recetas |
 | Fuente de datos oficial | API REST de CIMA/AEMPS (`https://cima.aemps.es/cima/rest`) |
 | Observabilidad | Sentry (`sentry-sdk`, captura de errores a nivel de aplicación) |
+| Seguridad (opcional) | API key ligera (`X-API-Key`) + rate limiting por IP (`slowapi`), ver [Seguridad en un despliegue público](#seguridad-en-un-despliegue-público) |
 | Configuración | `pydantic-settings` (fuente única de variables de entorno) |
 | Contenedores | Docker, Docker Compose |
 | Calidad (backend) | Ruff (lint + format), Pytest + `pytest-cov` (umbral 85%) |
@@ -191,8 +193,9 @@ desarrollo activo. Para un despliegue completo en contenedores, ver
    `RAGPharmAgent`/`/consult` generen respuesta — sin ella, ambos degradan a una salida vacía
    en vez de fallar (ver `GroqClient`). `EMBEDDING_PROVIDER` debe permanecer en `ollama` — los
    embeddings de datos de salud nunca usan un proveedor externo, ver
-   [Descripción y objetivos](#descripción-y-objetivos). Ver [CORS](#cors) para
-   `CORS_ALLOWED_ORIGINS`.
+   [Descripción y objetivos](#descripción-y-objetivos). Ver
+   [Seguridad en un despliegue público](#seguridad-en-un-despliegue-público) para
+   `API_KEY`/`RATE_LIMIT`/`CORS_ALLOWED_ORIGINS`/`DATABASE_SSL`.
 
 5. **Aplicar las migraciones de base de datos** (crea el esquema, habilita `pgvector`):
 
@@ -290,9 +293,10 @@ su propio job de CI, independiente del backend.
 
 ## Endpoints de la API
 
-Prefijo común: `/api/v1/pharmacy` (excepto `/health`). La API se sirve abierta, sin
-autenticación — decisión deliberada para consumo local, ver [CORS](#cors) y
-[Estado del proyecto](#estado-del-proyecto).
+Prefijo común: `/api/v1/pharmacy` (excepto `/health`). Sin `API_KEY` configurada (por
+defecto, desarrollo local) la API se sirve abierta, sin autenticación; con `API_KEY`
+configurada (recomendado para cualquier despliegue público) exige la cabecera `X-API-Key`
+en todo el prefijo — ver [Seguridad en un despliegue público](#seguridad-en-un-despliegue-público).
 
 | Método | Ruta | Descripción | Agente / servicio |
 |---|---|---|---|
@@ -429,19 +433,42 @@ campo `file`):
 completo se persiste como registro auditable en la tabla `prescription_records` (ver
 [Migraciones de base de datos](#migraciones-de-base-de-datos)).
 
-## CORS
+## Seguridad en un despliegue público
 
-La API no requiere ninguna autenticación — se sirve abierta para consumo del frontend local
-(SPA en `frontend/`) y de la evaluación del TFM sin fricción. Es una decisión deliberada,
-apropiada solo para desarrollo/demo local, no para un despliegue expuesto a Internet sin
-añadir algún mecanismo de protección:
+En desarrollo local, la API se sirve completamente abierta — sin autenticación, sin límite
+de peticiones — para consumo del frontend local sin ninguna fricción:
 
 ```bash
 curl http://localhost:8000/api/v1/pharmacy/search -d '...'
 ```
 
-CORS se controla por `CORS_ALLOWED_ORIGINS` (lista JSON de orígenes permitidos, `["*"]` por
-defecto — apropiado para desarrollo local, debe restringirse en producción).
+Antes de exponerla a Internet, cuatro variables de entorno pasan a ser relevantes (todas en
+[.env.example](.env.example)):
+
+- **`API_KEY`**: vacía por defecto (auth desactivada). Con un valor, `pharmacy_router` exige
+  la cabecera `X-API-Key` en cada petición (ver `security.py`). El frontend desplegado la
+  envía automáticamente si se le da el mismo valor en su propio `VITE_API_KEY`
+  ([frontend/.env.example](frontend/.env.example)) — un visitante normal de la web no ve ni
+  introduce ninguna clave, solo bloquea a quien ataque la API directamente sin pasar por el
+  frontend. Como la clave vive en el bundle del navegador, no es un secreto fuerte — de ahí
+  el punto siguiente.
+- **`RATE_LIMIT`** (`30/minute` por defecto): límite de peticiones por IP en todo
+  `pharmacy_router`, vía `slowapi`. Acota el coste máximo posible en Groq/Gemini aunque la
+  API key se filtre. `/health` queda exenta explícitamente para no interferir con los
+  chequeos de salud del proveedor de despliegue.
+- **`CORS_ALLOWED_ORIGINS`** (`["*"]` por defecto, lista JSON): restringir al dominio real
+  del frontend desplegado, p. ej. `CORS_ALLOWED_ORIGINS=["https://pharmagent.vercel.app"]`.
+- **`DATABASE_SSL`** (`false` por defecto): el Postgres de `docker-compose.yml` no ofrece
+  SSL; un Postgres gestionado en un proveedor de despliegue normalmente sí lo exige —
+  `DATABASE_SSL=true` ahí, o la conexión falla (ver `database.py`).
+
+Además, todo el cuerpo de las peticiones está limitado a 10 MB (`MaxBodySizeMiddleware` en
+`main.py`) — protege de subidas descontroladas en los endpoints de receta.
+
+Ninguna de estas medidas sustituye una autenticación de usuarios real ni resuelve por sí
+sola el tratamiento de datos personales en la foto de receta — ver
+[ADR 002](docs/adr/002-datos-personales-foto-receta.md) para esa decisión, independiente de
+esta.
 
 ## Pruebas automatizadas y cobertura
 
@@ -514,8 +541,9 @@ Limitaciones conocidas y aceptadas (fuera de alcance hasta ahora): la base curad
 su complemento por LLM para combinaciones no cubiertas es un mecanismo de asistencia, no un
 dato verificado; el respaldo de CIMA en vivo de `/search` y `/consult` depende de que el
 nombre buscado coincida literalmente con cómo lo registra CIMA (sin búsqueda semántica del
-lado de CIMA); la API no tiene autenticación (deliberado para consumo local, ver
-[CORS](#cors) — no apto para exponer a Internet sin añadir alguna protección); no existe
+lado de CIMA); la autenticación por API key es opcional y ligera (protege de abuso anónimo,
+no es un sistema de usuarios — ver
+[Seguridad en un despliegue público](#seguridad-en-un-despliegue-público)); no existe
 todavía una entidad de dominio `Drug` desacoplada del modelo ORM; y la extracción de
 `PrescriptionAgent` se persiste como registro auditable en JSON crudo, no normalizada a la
 entidad de dominio estricta `Prescription`/`PrescribedDrug` (ver la nota de diseño en

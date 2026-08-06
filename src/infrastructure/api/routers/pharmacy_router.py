@@ -1,8 +1,11 @@
 """Endpoints REST de farmacia: búsqueda semántica y consulta al `RAGPharmAgent`.
 
-Sin autenticación: la API se sirve abierta para consumo del frontend local (`frontend/`) —
-decisión deliberada, apropiada solo para desarrollo/demo local; un despliegue expuesto a
-Internet necesitaría reinstaurar algún mecanismo de autenticación.
+Autenticación opcional por API key (`X-API-Key`, ver `security.py`): desactivada por
+completo mientras `settings.api_key` esté vacío (por defecto, apropiado para desarrollo/demo
+local, donde el frontend y la API corren en la misma máquina); se activa configurando
+`API_KEY` en el entorno, necesario antes de exponer la API a Internet. También sujeto a
+rate limiting por IP (`settings.rate_limit`, ver `main.py`) cuando está expuesta
+públicamente.
 """
 
 from __future__ import annotations
@@ -25,6 +28,7 @@ from src.infrastructure.api.schemas.drug_schemas import (
     PrescriptionAnalysisResponse,
     ProcessPrescriptionResponse,
 )
+from src.infrastructure.api.security import verify_api_key
 from src.infrastructure.database import get_db_session
 from src.infrastructure.external.cima_client import CimaAPIClient
 from src.infrastructure.external.gemini_client import GeminiClient
@@ -37,6 +41,7 @@ from src.use_cases.process_prescription import ProcessPrescriptionUseCase
 router = APIRouter(
     prefix="/api/v1/pharmacy",
     tags=["pharmacy"],
+    dependencies=[Depends(verify_api_key)],
 )
 
 

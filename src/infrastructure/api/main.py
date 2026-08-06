@@ -3,13 +3,42 @@
 from __future__ import annotations
 
 import sentry_sdk
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.starlette import StarletteIntegration
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.util import get_remote_address
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.infrastructure.api.routers.pharmacy_router import router as pharmacy_router
 from src.infrastructure.config.settings import settings
+
+# Tamaño máximo de cuerpo de petición (recetas fotografiadas con el móvil caben de sobra;
+# protege de subidas descontroladas — abuso de ancho de banda/memoria, y de coste en Gemini
+# si la API queda expuesta públicamente). Se comprueba por `Content-Length` antes de leer el
+# cuerpo, sin cargarlo en memoria solo para medirlo.
+MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+class MaxBodySizeMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
+        content_length = request.headers.get("content-length")
+        if content_length is not None and int(content_length) > MAX_REQUEST_BODY_BYTES:
+            return JSONResponse(
+                status_code=413,
+                content={
+                    "detail": (
+                        "Cuerpo de la petición demasiado grande "
+                        f"(máximo {MAX_REQUEST_BODY_BYTES // (1024 * 1024)} MB)."
+                    )
+                },
+            )
+        return await call_next(request)
+
 
 if settings.sentry_dsn:
     sentry_sdk.init(
@@ -20,6 +49,16 @@ if settings.sentry_dsn:
     )
 
 app = FastAPI(title="PharmAgent API")
+
+# Rate limiting por IP (`settings.rate_limit`, ver security.py/pharmacy_router.py para la
+# autenticación opcional que lo complementa) — protege de abuso/coste descontrolado en
+# Groq/Gemini si la API se expone públicamente. `/health` queda exenta explícitamente para
+# no interferir con los chequeos de salud del proveedor de despliegue.
+limiter = Limiter(key_func=get_remote_address, default_limits=[settings.rate_limit])
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(MaxBodySizeMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -33,5 +72,6 @@ app.include_router(pharmacy_router)
 
 
 @app.get("/health")
-async def health() -> dict:
+@limiter.exempt
+async def health(request: Request) -> dict:
     return {"status": "ok"}
