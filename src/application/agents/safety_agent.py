@@ -211,6 +211,85 @@ _KNOWN_INTERACTIONS: tuple[DrugInteraction, ...] = (
             "(p. ej. pantoprazol) o espaciar la administración."
         ),
     ),
+    DrugInteraction(
+        primary_drug="amoxicilina",
+        secondary_drug="alopurinol",
+        severity=InteractionSeverity.MEDIUM,
+        description=(
+            "La combinación aumenta la incidencia de erupción cutánea (rash "
+            "maculopapular), especialmente en tratamientos prolongados."
+        ),
+        clinical_recommendation=(
+            "Informar al paciente del riesgo de erupción cutánea; valorar alternativa si "
+            "hay antecedente de hipersensibilidad a penicilinas."
+        ),
+    ),
+    DrugInteraction(
+        primary_drug="amoxicilina",
+        secondary_drug="metotrexato",
+        severity=InteractionSeverity.HIGH,
+        description=(
+            "La amoxicilina reduce la eliminación renal de metotrexato, aumentando el "
+            "riesgo de toxicidad hematológica y gastrointestinal."
+        ),
+        clinical_recommendation=(
+            "Evitar la combinación si es posible; si es necesaria, monitorizar niveles de "
+            "metotrexato y hemograma estrechamente."
+        ),
+    ),
+    DrugInteraction(
+        primary_drug="amoxicilina",
+        secondary_drug="warfarina",
+        severity=InteractionSeverity.MEDIUM,
+        description=(
+            "Los antibióticos de amplio espectro pueden potenciar el efecto anticoagulante "
+            "al alterar la flora intestinal productora de vitamina K."
+        ),
+        clinical_recommendation=(
+            "Monitorizar INR con mayor frecuencia durante el tratamiento antibiótico y tras "
+            "finalizarlo."
+        ),
+    ),
+    DrugInteraction(
+        primary_drug="paracetamol",
+        secondary_drug="alcohol",
+        severity=InteractionSeverity.HIGH,
+        description=(
+            "El consumo crónico de alcohol induce el CYP2E1, aumentando la formación del "
+            "metabolito hepatotóxico de paracetamol y el riesgo de daño hepático incluso a "
+            "dosis terapéuticas."
+        ),
+        clinical_recommendation=(
+            "Evitar dosis altas o uso prolongado de paracetamol en consumidores habituales "
+            "de alcohol; no superar 2 g/día en ese caso."
+        ),
+    ),
+    DrugInteraction(
+        primary_drug="ibuprofeno",
+        secondary_drug="prednisona",
+        severity=InteractionSeverity.MEDIUM,
+        description=(
+            "El uso combinado de AINE y corticoides aumenta significativamente el riesgo de "
+            "úlcera y hemorragia digestiva."
+        ),
+        clinical_recommendation=(
+            "Evitar la combinación si es posible; si es necesaria, valorar gastroprotección "
+            "con un IBP."
+        ),
+    ),
+    DrugInteraction(
+        primary_drug="omeprazol",
+        secondary_drug="metotrexato",
+        severity=InteractionSeverity.HIGH,
+        description=(
+            "Los IBP reducen la eliminación renal de metotrexato a dosis altas, aumentando "
+            "el riesgo de toxicidad."
+        ),
+        clinical_recommendation=(
+            "En pautas de metotrexato a dosis altas, valorar suspender temporalmente el IBP "
+            "o sustituirlo por un antagonista H2."
+        ),
+    ),
 )
 
 _REVIEW_SEVERITIES = frozenset({InteractionSeverity.HIGH, InteractionSeverity.SEVERE})
