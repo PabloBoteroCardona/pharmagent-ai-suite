@@ -306,6 +306,7 @@ respuesta completa citando los 3 medicamentos de losartán encontrados.
   [README.md](README.md#migraciones-de-base-de-datos). `PrescriptionRecordModel` persiste el
   resultado de `ProcessPrescriptionUseCase` como registro auditable.
 - **CORS (BLOQUE D)**: `settings.cors_allowed_origins` (`["*"]` por defecto en desarrollo
-  local/CI). La API REST no exige autenticación — decisión deliberada, se sirve abierta para
-  consumo del frontend local (SPA en `frontend/`, ver [README.md](README.md#frontend-spa)),
-  apropiada solo para desarrollo/demo local.
+  local/CI, restringir al dominio real en un despliegue público). Autenticación por API key
+  opcional (`settings.api_key`, `security.py`) + rate limiting por IP (`slowapi`, `main.py`)
+  — desactivados por defecto para consumo local sin fricción, activables antes de exponer la
+  API a Internet. Ver [README.md, "Seguridad en un despliegue público"](README.md#seguridad-en-un-despliegue-público).

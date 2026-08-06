@@ -67,7 +67,7 @@ class Settings(BaseSettings):
     # Límite de peticiones por IP en pharmacy_router (protege de abuso/coste descontrolado
     # en Groq/Gemini si la API queda expuesta públicamente). Formato de `slowapi`/`limits`:
     # "<cantidad>/<periodo>".
-    rate_limit: str = "30/minute"
+    rate_limit: str = "5/minute"
 
 
 @lru_cache

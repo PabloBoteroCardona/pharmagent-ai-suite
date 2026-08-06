@@ -452,7 +452,8 @@ Antes de exponerla a Internet, cuatro variables de entorno pasan a ser relevante
   introduce ninguna clave, solo bloquea a quien ataque la API directamente sin pasar por el
   frontend. Como la clave vive en el bundle del navegador, no es un secreto fuerte — de ahí
   el punto siguiente.
-- **`RATE_LIMIT`** (`30/minute` por defecto): límite de peticiones por IP en todo
+- **`RATE_LIMIT`** (`5/minute` por defecto — deliberadamente bajo, proyecto demo/portfolio,
+  no un servicio con tráfico real esperado): límite de peticiones por IP en todo
   `pharmacy_router`, vía `slowapi`. Acota el coste máximo posible en Groq/Gemini aunque la
   API key se filtre. `/health` queda exenta explícitamente para no interferir con los
   chequeos de salud del proveedor de despliegue.

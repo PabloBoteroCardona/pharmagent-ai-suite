@@ -44,8 +44,11 @@ npm run dev                                     # servidor de desarrollo
   v4) — es el mecanismo real que genera las clases `bg-safe-600`/`text-warning-700`/etc. que
   usa el resto del frontend. No sustituir por un `:root` plano sin actualizar todos los call
   sites: las clases dejarían de generarse en silencio, sin error.
-- **La API REST no tiene autenticación**, a propósito, para consumo local. No es apto para
-  exponer a Internet tal cual.
+- **Autenticación de la API opcional y desactivada por defecto** (`API_KEY` vacía =
+  desactivada, consumo local sin fricción). Con `API_KEY` configurada, `pharmacy_router`
+  exige `X-API-Key` (ver `security.py`) — necesario antes de exponer la API a Internet, junto
+  con `RATE_LIMIT` (por IP, `slowapi`, ver `main.py`) y restringir `CORS_ALLOWED_ORIGINS`.
+  Ver [README.md, "Seguridad en un despliegue público"](README.md#seguridad-en-un-despliegue-público).
 
 ## Convenciones de testing
 
