@@ -1,8 +1,7 @@
 """Servicio de aplicación: ingesta e indexación semántica de fármacos.
 
 Orquesta CIMA (fuente primaria en vivo — ficha, ficha técnica y prospecto), Ollama
-(embeddings locales) y PostgreSQL/pgvector (caché semántica), según la decisión de
-arquitectura en [DECISIONS.md](../../../.memory/DECISIONS.md).
+(embeddings locales) y PostgreSQL/pgvector (caché semántica).
 
 `search_drugs_semantic` consulta primero la caché vectorial (rápido, sin red externa) y,
 si no hay resultados, cae automáticamente a una búsqueda en vivo en CIMA usando `query`

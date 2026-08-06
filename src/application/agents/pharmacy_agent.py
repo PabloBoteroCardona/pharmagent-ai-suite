@@ -94,7 +94,7 @@ class RAGPharmAgent:
         # `temperature=0.0`: la respuesta cita datos clínicos (dosis, contraindicaciones)
         # extraídos textualmente del contexto — debe ser determinista para la misma
         # pregunta, no variar entre peticiones por muestreo del LLM (mismo razonamiento que
-        # `SafetyCheckAgent._check_with_language_model`, ver `.memory/BUGS.md`).
+        # `SafetyCheckAgent._check_with_language_model`).
         answer = await self._language_model.generate_completion(
             prompt=query, system=system_prompt, temperature=0.0
         )

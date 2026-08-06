@@ -65,10 +65,19 @@ escaneo o PDF) mediante comprensión multimodal.
   `requires_manual_review` ni normalización de principio activo todavía.
 
 ### Consideraciones de seguridad y cumplimiento
-- Las imágenes de recetas contienen datos de salud (categoría especial, RGPD/LOPDGDD). El
-  cliente HTTP no persiste la imagen en disco ni en logs; **pendiente**: no hay todavía una
-  capa de observabilidad que filtre explícitamente PII de las trazas de Sentry (BLOQUE B solo
-  cablea la captura de errores a nivel de aplicación, sin scrubbing específico de este flujo).
+- Las imágenes de recetas contienen datos de salud (categoría especial, RGPD/LOPDGDD) y con
+  frecuencia datos identificativos directos (nombre del paciente, DNI/NIE, dirección) —
+  no solo "datos de salud" en abstracto. `GeminiClient` envía la **imagen completa** a
+  Gemini; el filtrado solo puede actuar sobre lo que el modelo devuelve, no sobre lo que
+  Google procesa en sus servidores antes de responder — riesgo real, no eliminado, ver
+  [README.md](README.md#descripción-y-objetivos) para el detalle completo. Mitigaciones
+  aplicadas: `SYSTEM_PROMPT` instruye explícitamente a no incluir ningún dato identificativo
+  en la respuesta; el resultado extraído es lo único que se persiste (la imagen no se guarda
+  en disco ni en logs); el frontend exige una casilla de confirmación explícita antes de
+  habilitar el envío. **Pendiente**: no hay todavía una capa de observabilidad que filtre
+  explícitamente PII de las trazas de Sentry (BLOQUE B solo cablea la captura de errores a
+  nivel de aplicación, sin scrubbing específico de este flujo); un despliegue público con
+  recetas reales necesitaría además un acuerdo de encargado de tratamiento con Google.
 - El umbral de confianza (`PRESCRIPTION_MIN_CONFIDENCE`) y el enrutado a revisión manual
   descritos como diseño objetivo **no están implementados**: hoy `GeminiClient` no calcula ni
   devuelve ningún `confidence_score`.

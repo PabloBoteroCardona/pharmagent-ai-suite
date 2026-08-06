@@ -180,8 +180,8 @@ class TestAnswerConsultation:
     async def test_requests_deterministic_output_from_language_model(self) -> None:
         """Regresión: sin `temperature=0.0`, la misma pregunta sobre datos clínicos
         (dosis, contraindicaciones) podía generar respuestas distintas entre peticiones por
-        muestreo del LLM — mismo problema real reportado por el usuario para
-        `SafetyCheckAgent` (ver .memory/BUGS.md), aplicable aquí por el mismo motivo."""
+        muestreo del LLM — mismo problema real de producción detectado en
+        `SafetyCheckAgent`, aplicable aquí por el mismo motivo."""
         drug_service = _make_drug_service(
             DrugSearchResult(drugs=[FAKE_DRUG], source="cache")
         )

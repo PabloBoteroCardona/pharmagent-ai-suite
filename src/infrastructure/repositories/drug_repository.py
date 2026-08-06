@@ -2,7 +2,7 @@
 
 Capa de infraestructura: encapsula las consultas SQLAlchemy (upsert por
 `nregistro`, lectura y búsqueda semántica vía pgvector) que alimentan la
-caché local descrita en [DECISIONS.md](../../../.memory/DECISIONS.md).
+caché local de fármacos.
 """
 
 from __future__ import annotations

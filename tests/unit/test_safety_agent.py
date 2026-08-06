@@ -256,8 +256,8 @@ class TestSafetyCheckAgentLLMAssisted:
     async def test_requests_deterministic_output_from_language_model(self) -> None:
         """Regresión: sin `temperature=0.0`, Groq muestrea la respuesta y la misma consulta
         de interacciones puede devolver severidad/descripción distintas en cada petición —
-        inaceptable para un veredicto de seguridad clínica (bug real reportado por el
-        usuario con Heparina/Lixiana/Aspirina, ver .memory/BUGS.md)."""
+        inaceptable para un veredicto de seguridad clínica (bug real de producción
+        detectado con Heparina/Lixiana/Aspirina)."""
         language_model = FakeLanguageModel('{"interactions": []}')
         agent = SafetyCheckAgent(language_model=language_model)
 

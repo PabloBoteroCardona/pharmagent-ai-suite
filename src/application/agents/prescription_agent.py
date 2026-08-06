@@ -2,7 +2,7 @@
 
 Ver [AGENTS.md](../../../AGENTS.md#1-prescriptionagent) para el contrato de
 comportamiento (nunca inventar datos ilegibles, `GOOGLE_API_KEY` exclusiva para este
-flujo — ver [DECISIONS.md](../../../.memory/DECISIONS.md)).
+flujo).
 """
 
 from __future__ import annotations

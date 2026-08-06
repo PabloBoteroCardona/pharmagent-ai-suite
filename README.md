@@ -49,9 +49,32 @@ excepción. La generación de texto (razonamiento de `SafetyCheckAgent` y respue
 (~30s en CPU local frente a <2s en Groq) — una decisión consciente de intercambiar la
 privacidad estricta de "nunca sale de la máquina" por velocidad de respuesta percibida; solo
 salen nombres de fármacos y fragmentos de ficha técnica, nunca datos identificativos del
-paciente. La otra llamada a un proveedor externo (Google Gemini) es la comprensión
-multimodal de imágenes de recetas, que tampoco tiene alternativa local viable con calidad
-suficiente.
+paciente.
+
+La otra llamada a un proveedor externo (Google Gemini) es la comprensión multimodal de
+imágenes de recetas, que tampoco tiene alternativa local viable con calidad suficiente —
+aquí el riesgo de privacidad es mayor y se documenta sin suavizarlo: Gemini recibe la
+**imagen completa** de la receta, y una receta real puede llevar visibles nombre del
+paciente, DNI/NIE o dirección. Ni un aviso ni una casilla de confirmación cambian quién es
+el responsable del tratamiento de esos datos ante el RGPD/LOPDGDD — sigue siendo quien opera
+el servicio, no quien sube la foto. Por eso la mitigación real, no solo declarativa, es
+distinta según el entorno:
+
+- **Despliegue público (`VITE_DEMO_MODE=true`)**: la pestaña de Receta **no acepta fotos de
+  desconocidos en absoluto**. Solo permite elegir entre 3 imágenes de ejemplo 100% sintéticas
+  (`frontend/public/samples/`, generadas con
+  [evaluation/generate_synthetic_prescriptions.py](evaluation/generate_synthetic_prescriptions.py) —
+  texto renderizado sobre fondo blanco, sin ninguna receta ni paciente real). Elimina el
+  riesgo en vez de intentar gestionarlo.
+- **Desarrollo local** (`VITE_DEMO_MODE` sin definir): mantiene la subida real, con
+  mitigaciones en profundidad — ninguna suficiente por sí sola, pero sí honestas: el
+  resultado extraído es lo único que se persiste (**la imagen nunca se guarda**, ni en la
+  base de datos ni en logs); el *system prompt* de `GeminiClient` instruye explícitamente a
+  no incluir ningún dato identificativo en la respuesta; el frontend exige una casilla de
+  confirmación antes de habilitar el envío. Lo que ninguna de ellas evita: **Google procesa
+  la imagen completa en sus servidores** antes de que cualquier filtro nuestro pueda actuar
+  — sujeto a los términos de tratamiento de datos de Google, no a los nuestros. Un uso real
+  con pacientes reales necesitaría además un acuerdo de encargado de tratamiento con Google.
 
 ## Stack tecnológico y arquitectura
 

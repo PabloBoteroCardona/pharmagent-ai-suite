@@ -2,11 +2,10 @@
 
 Encapsula el acceso a Gemini (`google-genai`), usado exclusivamente por
 `PrescriptionAgent` para comprensión multimodal de imágenes de recetas médicas.
-`GOOGLE_API_KEY` (`settings.google_api_key`) está reservada a este cliente — ver
-[DECISIONS.md](../../../.memory/DECISIONS.md): nunca se usa para embeddings ni RAG,
-que permanecen exclusivamente en Ollama local. Nunca propaga excepciones: ante un
-fallo de red, API o parseo, degrada a `{"drugs": [], "advertencias": []}` para que
-las capas superiores decidan cómo continuar.
+`GOOGLE_API_KEY` (`settings.google_api_key`) está reservada a este cliente: nunca se usa
+para embeddings ni RAG, que permanecen exclusivamente en Ollama local. Nunca propaga
+excepciones: ante un fallo de red, API o parseo, degrada a
+`{"drugs": [], "advertencias": []}` para que las capas superiores decidan cómo continuar.
 
 Nota sobre el modelo: `gemini-1.5-pro` (usado originalmente, ver AGENTS.md/SKILLS.md)
 ha sido retirado por Google — devuelve `404 NOT_FOUND` para cualquier API key nueva desde
@@ -35,7 +34,12 @@ SYSTEM_PROMPT = (
     "frecuencia de administración y duración del tratamiento, además de cualquier "
     "advertencia relevante (alergias señaladas, condiciones especiales, indicaciones del "
     "prescriptor). Nunca inventes un fármaco, dosis o dato que no sea legible con certeza en "
-    "la imagen; si un campo no es legible, devuélvelo como null. Responde EXCLUSIVAMENTE con "
+    "la imagen; si un campo no es legible, devuélvelo como null. "
+    "IMPORTANTE — protección de datos: no incluyas en ningún campo de la respuesta (ni "
+    "siquiera en advertencias) el nombre del paciente, DNI/NIE, dirección, número de la "
+    "seguridad social, ni ningún otro dato que identifique a una persona concreta, aunque "
+    "sea legible en la imagen; extrae únicamente la información clínica del tratamiento "
+    "(fármacos, dosis, pauta y advertencias clínicas). Responde EXCLUSIVAMENTE con "
     "un objeto JSON, sin texto adicional, con esta forma exacta: "
     '{"drugs": [{"farmaco": string, "dosificacion": string | null, '
     '"frecuencia": string | null, "duracion": string | null}], "advertencias": [string]}'

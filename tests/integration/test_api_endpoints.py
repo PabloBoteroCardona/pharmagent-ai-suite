@@ -260,8 +260,8 @@ class TestProcessPrescriptionEndpoint:
 
 class TestNoAuthenticationRequired:
     """La API REST se sirve abierta para consumo del frontend local (`frontend/`) — ningún
-    endpoint exige la cabecera `X-API-Key`, se envíe o no (ver .memory/DECISIONS.md, "API
-    REST abierta para consumo local")."""
+    endpoint exige la cabecera `X-API-Key`, se envíe o no. Decisión deliberada, apropiada
+    solo para desarrollo/demo local."""
 
     def test_accepts_request_without_any_api_key_header(
         self, client: TestClient

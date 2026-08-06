@@ -70,8 +70,8 @@ class GroqClient:
         `temperature`: por defecto Groq usa su propio valor por omisión (muestreo, no
         determinista) si no se especifica. Los llamadores que devuelven datos de seguridad
         clínica (`SafetyCheckAgent`, `RAGPharmAgent`) deben fijarlo a `0.0` explícitamente —
-        ver `.memory/BUGS.md` sobre por qué una respuesta de interacciones farmacológicas no
-        puede variar entre peticiones idénticas."""
+        una respuesta de interacciones farmacológicas no puede variar entre peticiones
+        idénticas."""
         if not self._api_key:
             return ""
 

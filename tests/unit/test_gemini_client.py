@@ -1,9 +1,8 @@
 """Tests unitarios de `GeminiClient`: manejo defensivo de errores de API/parseo.
 
 Sustituye el cliente `google-genai` interno por un doble (`unittest.mock`) — cubre los
-casos que la verificación manual contra la API real de Gemini (ver
-`.memory/DECISIONS.md`, BLOQUE B) no ejercita: errores de API, JSON malformado y
-ausencia de `GOOGLE_API_KEY`.
+casos que la verificación manual contra la API real de Gemini no ejercita: errores de
+API, JSON malformado y ausencia de `GOOGLE_API_KEY`.
 """
 
 from __future__ import annotations

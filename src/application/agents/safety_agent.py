@@ -7,8 +7,8 @@ comportamiento. Usa la entidad de dominio `DrugInteraction`
 Diseño híbrido: la base curada (`_KNOWN_INTERACTIONS`) es la fuente **autoritativa** —
 si cubre la combinación de fármacos dada, su resultado se devuelve tal cual y nunca se
 consulta al modelo de lenguaje. Solo cuando ningún par de la base curada aplica, y se ha
-inyectado un `LanguageModelPort` (Ollama local, nunca un proveedor externo — ver
-[DECISIONS.md](../../../.memory/DECISIONS.md)), el agente consulta al modelo para razonar
+inyectado un `LanguageModelPort` (Groq en la nube desde la migración por latencia; antes
+Ollama local), el agente consulta al modelo para razonar
 sobre combinaciones no cubiertas. La respuesta del modelo nunca puede contradecir ni
 sustituir a la base curada, solo complementarla; cada interacción devuelta lleva un campo
 `source` (`"curated"` / `"llm"`) para que el consumidor distinga el nivel de confianza. Ante
@@ -363,8 +363,8 @@ class SafetyCheckAgent:
         # en la UI. `temperature=0.0` fuerza salida determinista (muestreo greedy) — sin
         # esto, Groq usa su temperatura por omisión y la misma consulta puede devolver
         # severidad, descripción o incluso qué fármaco es "primary_drug" distintos en cada
-        # petición: inaceptable para un veredicto de seguridad clínica (bug real reportado
-        # por el usuario, ver .memory/BUGS.md).
+        # petición: inaceptable para un veredicto de seguridad clínica (bug real de
+        # producción, corregido fijando la temperatura a 0).
         prompt = "Fármacos a evaluar: " + ", ".join(sorted(drug_names))
         raw_response = await self._language_model.generate_completion(
             prompt=prompt, system=LLM_SYSTEM_PROMPT, temperature=0.0
