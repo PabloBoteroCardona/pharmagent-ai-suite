@@ -50,8 +50,7 @@ privacidad estricta de "nunca sale de la máquina" por velocidad de respuesta pe
 salen nombres de fármacos y fragmentos de ficha técnica, nunca datos identificativos del
 paciente. La otra llamada a un proveedor externo (Google Gemini) es la comprensión
 multimodal de imágenes de recetas, que tampoco tiene alternativa local viable con calidad
-suficiente. Ver el detalle de esta y otras decisiones de arquitectura en
-[.memory/DECISIONS.md](.memory/DECISIONS.md).
+suficiente.
 
 ## Stack tecnológico y arquitectura
 
@@ -67,7 +66,9 @@ suficiente. Ver el detalle de esta y otras decisiones de arquitectura en
 | Observabilidad | Sentry (`sentry-sdk`, captura de errores a nivel de aplicación) |
 | Configuración | `pydantic-settings` (fuente única de variables de entorno) |
 | Contenedores | Docker, Docker Compose |
-| Calidad | Ruff (lint + format), Pytest + `pytest-cov` (umbral 85%), GitHub Actions (lint/tests + migraciones) |
+| Calidad (backend) | Ruff (lint + format), Pytest + `pytest-cov` (umbral 85%) |
+| Calidad (frontend) | TypeScript estricto (`tsc -b`), Vitest + `jsdom` |
+| CI | GitHub Actions — 3 jobs independientes: `quality` (backend), `frontend` (tests + build), `migrations` (Alembic contra Postgres real) |
 | Frontend | SPA estática en TypeScript + Tailwind CSS v4, Vite (`frontend/`) — cliente puro de la API REST, ver [Frontend (SPA)](#frontend-spa) |
 
 ### Arquitectura: Clean Architecture / monolito modular
@@ -89,7 +90,7 @@ src/
 ├── use_cases/                # Puntos de entrada explícitos e independientes del transporte
 │                                #   ConsultDrugRAGUseCase, ProcessPrescriptionUseCase
 └── infrastructure/           # Framework web, clientes externos, persistencia, configuración
-    ├── api/                     # FastAPI: routers, esquemas Pydantic REST, main.py, security.py
+    ├── api/                     # FastAPI: routers, esquemas Pydantic REST, main.py
     ├── config/                   # pydantic-settings (única fuente de variables de entorno)
     ├── external/                  # CimaAPIClient, OllamaClient, GroqClient, GeminiClient
     ├── models/ · repositories/     # ORM SQLAlchemy + pgvector, repositorios
@@ -164,9 +165,10 @@ desarrollo activo. Para un despliegue completo en contenedores, ver
    `/process-prescription`. Añadir `GROQ_API_KEY` (gratuita en [console.groq.com](https://console.groq.com/))
    para que `SafetyCheckAgent` razone sobre combinaciones no cubiertas por la base curada y
    `RAGPharmAgent`/`/consult` generen respuesta — sin ella, ambos degradan a una salida vacía
-   en vez de fallar (ver `GroqClient`). `EMBEDDING_PROVIDER` debe permanecer en `ollama` — ver
-   [.memory/DECISIONS.md](.memory/DECISIONS.md) sobre por qué los embeddings nunca usan un
-   proveedor externo. Ver [CORS](#cors) para `CORS_ALLOWED_ORIGINS`.
+   en vez de fallar (ver `GroqClient`). `EMBEDDING_PROVIDER` debe permanecer en `ollama` — los
+   embeddings de datos de salud nunca usan un proveedor externo, ver
+   [Descripción y objetivos](#descripción-y-objetivos). Ver [CORS](#cors) para
+   `CORS_ALLOWED_ORIGINS`.
 
 5. **Aplicar las migraciones de base de datos** (crea el esquema, habilita `pgvector`):
 
@@ -213,9 +215,9 @@ docker exec pharmagent_api python -m scripts.ingest_drugs
 
 ## Frontend (SPA)
 
-[frontend/](frontend/) es una SPA estática (TypeScript + Tailwind CSS v4, compilada con Vite)
-que consume la API REST vía `fetch` — un cliente externo más, igual que el panel Streamlit
-que sustituye: no importa nada del backend Python, solo conoce `VITE_API_BASE_URL`
+[frontend/](frontend/) es una SPA estática (TypeScript + Tailwind CSS v4, compilada con Vite,
+sin framework de UI — DOM directo) que consume la API REST vía `fetch`: un cliente externo
+más, no importa nada del backend Python — solo conoce `VITE_API_BASE_URL`
 (`http://localhost:8000` por defecto) y los contratos JSON de
 [drug_schemas.py](src/infrastructure/api/schemas/drug_schemas.py) (espejados a mano en
 [frontend/src/types.ts](frontend/src/types.ts)).
@@ -225,33 +227,42 @@ cd frontend
 npm install
 cp .env.example .env.local   # opcional, solo si la API no está en localhost:8000
 npm run dev                  # servidor de desarrollo en http://localhost:5173
+npm test                     # suite Vitest
 ```
 
 `npm run build` genera la versión de producción en `frontend/dist/` (sin paso de servidor:
 son ficheros estáticos que puede servir cualquier CDN/hosting estático, apuntando
 `VITE_API_BASE_URL` a la API desplegada).
 
-Tres vistas sobre la misma barra de navegación, sin login ni fricción de acceso:
+Diseño de una sola columna centrada (sin barra lateral ni login), tres pestañas sobre la
+misma barra de navegación:
 
-1. **Consulta Clínica** (`POST /consult`) — prompter de pregunta en lenguaje natural,
-   síntesis en Markdown, badge de latencia medida en cliente y chip de procedencia
-   (`cache`/`live`/`none`), fuentes CIMA en un desplegable. Historial de consultas
-   persistido en `localStorage`, reutilizable con un clic desde la barra lateral.
-2. **Interacciones** (`POST /check-interactions`) — lista dinámica de fármacos, veredicto y
-   tarjetas de riesgo coloreadas por severidad (verde/ámbar/rojo).
+1. **Consulta Clínica** (`POST /consult`) — pregunta en lenguaje natural con autocompletado
+   de nombre de fármaco (`POST /search` con debounce, mientras escribes), síntesis en
+   Markdown, badge de latencia medida en cliente y chip de procedencia (`cache`/`live`/
+   `none`), fuentes CIMA en un desplegable.
+2. **Interacciones** (`POST /check-interactions`) — lista dinámica de fármacos (con el mismo
+   autocompletado), veredicto y tarjetas de riesgo coloreadas por severidad.
 3. **Receta** (`POST /process-prescription`) — subida de imagen con vista previa,
    extracción + auditoría de seguridad automática, y ficha CIMA por fármaco extraído
    (`POST /search`).
 
-La barra lateral muestra el estado de `/health` (comprobado en vivo) y, como información
-declarada (no verificada en vivo, al no existir un endpoint de estado para ellos), la pila
-de persistencia y el motor LLM en uso.
+Las tres vistas tienen un botón "Limpiar" para descartar los resultados acumulados. El
+footer (en vez de una barra lateral) agrupa la marca, las fuentes de datos, el aviso clínico
+y el estado de conexión — este último se autocomprueba contra `/health` al cargar la página;
+la pila de persistencia y el motor LLM se muestran como información declarada, no verificada
+en vivo (no existe un endpoint de estado para ellos).
+
+**Tests**: Vitest + `jsdom` (`frontend/src/*.test.ts`) cubren la lógica sin DOM completo —
+mapeos de severidad/veredicto/procedencia a HTML, escapado seguro de texto interpolado, el
+debounce del autocompletado y la sanitización de la síntesis Markdown (XSS). Se ejecutan en
+su propio job de CI, independiente del backend.
 
 ## Endpoints de la API
 
 Prefijo común: `/api/v1/pharmacy` (excepto `/health`). La API se sirve abierta, sin
-autenticación — ver [.memory/DECISIONS.md](.memory/DECISIONS.md), "API REST abierta para
-consumo local".
+autenticación — decisión deliberada para consumo local, ver [CORS](#cors) y
+[Estado del proyecto](#estado-del-proyecto).
 
 | Método | Ruta | Descripción | Agente / servicio |
 |---|---|---|---|
@@ -391,9 +402,9 @@ completo se persiste como registro auditable en la tabla `prescription_records` 
 ## CORS
 
 La API no requiere ninguna autenticación — se sirve abierta para consumo del frontend local
-(SPA en `frontend/`) y de la evaluación del TFM sin fricción (ver
-[.memory/DECISIONS.md](.memory/DECISIONS.md), "API REST abierta para consumo local"; solo
-apropiado para desarrollo/demo local, no para un despliegue expuesto a Internet):
+(SPA en `frontend/`) y de la evaluación del TFM sin fricción. Es una decisión deliberada,
+apropiada solo para desarrollo/demo local, no para un despliegue expuesto a Internet sin
+añadir algún mecanismo de protección:
 
 ```bash
 curl http://localhost:8000/api/v1/pharmacy/search -d '...'
@@ -405,26 +416,31 @@ defecto — apropiado para desarrollo local, debe restringirse en producción).
 ## Pruebas automatizadas y cobertura
 
 ```bash
+# Backend
 pytest                                                  # suite completa (unit + integration)
 pytest --cov=src --cov-report=term-missing              # con reporte de cobertura
 ruff check .                                              # lint
 ruff format --check .                                       # formato
+
+# Frontend
+cd frontend && npm test                                 # suite Vitest
 ```
 
-La suite (`tests/unit/`, `tests/integration/`) es determinista y no requiere Docker, red ni
-credenciales: las dependencias externas (CIMA, Ollama, Groq, PostgreSQL, Gemini) se
-sustituyen por dobles en memoria vía `app.dependency_overrides` de FastAPI (ver
+La suite de backend (`tests/unit/`, `tests/integration/`) es determinista y no requiere
+Docker, red ni credenciales: las dependencias externas (CIMA, Ollama, Groq, PostgreSQL,
+Gemini) se sustituyen por dobles en memoria vía `app.dependency_overrides` de FastAPI (ver
 [tests/integration/conftest.py](tests/integration/conftest.py)) o vía `httpx.MockTransport`/
 mocks directos para los clientes HTTP individuales (`tests/unit/test_cima_client.py`,
 `test_ollama_client.py`, `test_groq_client.py`, `test_gemini_client.py`), aprovechando que la
 propia arquitectura de puertos del dominio hace estos dobles triviales de construir.
-Cobertura actual: **~89%** de la lógica de negocio (backend); el frontend (`frontend/`) es
-TypeScript fuera de este cómputo de `pytest-cov` — se verifica manualmente en navegador real
-(ver [Frontend (SPA)](#frontend-spa)), no con la suite de pytest. Umbral de CI: 85%. El
-pipeline de integración continua ([.github/workflows/ci.yml](.github/workflows/ci.yml))
-ejecuta lint, formato, tests con cobertura, y un job independiente que aplica y revierte las
-migraciones Alembic contra un Postgres real de servicio — todo en cada `push`/`pull_request`
-a `main`.
+Cobertura actual: **~89%** de la lógica de negocio del backend (umbral de CI: 85%).
+
+El frontend tiene su propia suite (Vitest + `jsdom`, ver [Frontend (SPA)](#frontend-spa)),
+separada de `pytest-cov` por ser TypeScript. El pipeline de integración continua
+([.github/workflows/ci.yml](.github/workflows/ci.yml)) tiene tres jobs independientes en
+cada `push`/`pull_request` a `main`: `quality` (lint, formato, tests + cobertura del
+backend), `frontend` (tests + build de TypeScript) y `migrations` (aplica y revierte las
+migraciones Alembic contra un Postgres real de servicio).
 
 ## Evaluación cuantitativa
 
@@ -456,19 +472,21 @@ duplicada en `alembic.ini`.
 
 ## Estado del proyecto
 
-Progreso detallado, decisiones de arquitectura y bugs resueltos se documentan de forma viva
-en [.memory/](.memory/) (`CONTEXT.md`, `ROADMAP.md`, `DECISIONS.md`, `BUGS.md`) siguiendo el
-protocolo de memoria descrito en [CLAUDE.md](CLAUDE.md). En resumen: los tres agentes, la
+En resumen: los tres agentes, la
 orquestación end-to-end, la API REST completa (con CORS y persistencia auditable), la
-ingesta desde CIMA (por lotes y automática al consultar), las migraciones
-versionadas, la suite de tests con cobertura medida, la evaluación cuantitativa y el
-pipeline de CI están implementados y verificados contra servicios reales — no solo contra
-dobles de test. Limitaciones conocidas y aceptadas (fuera de alcance hasta ahora): la base
-curada de `SafetyCheckAgent` es mínima (6 pares) y su complemento por LLM es un mecanismo de
-asistencia, no una fuente clínica verificada; el respaldo de CIMA en vivo de `/search` y
-`/consult` depende de que el nombre buscado coincida literalmente con cómo lo registra CIMA
-(sin búsqueda semántica del lado de CIMA); no existe todavía una entidad de dominio `Drug`
-desacoplada del modelo ORM; y la extracción de `PrescriptionAgent` se persiste como registro
-auditable en JSON crudo, no normalizada a la entidad de dominio estricta
-`Prescription`/`PrescribedDrug` (ver la nota de diseño en
+ingesta desde CIMA (por lotes y automática al consultar), las migraciones versionadas, la
+suite de tests con cobertura medida en ambos lados (backend y frontend) y el pipeline de CI
+de 3 jobs están implementados y verificados contra servicios reales — no solo contra dobles
+de test.
+
+Limitaciones conocidas y aceptadas (fuera de alcance hasta ahora): la base curada de
+`SafetyCheckAgent` (20 pares) sigue siendo de demostración, no una fuente clínica completa —
+su complemento por LLM para combinaciones no cubiertas es un mecanismo de asistencia, no un
+dato verificado; el respaldo de CIMA en vivo de `/search` y `/consult` depende de que el
+nombre buscado coincida literalmente con cómo lo registra CIMA (sin búsqueda semántica del
+lado de CIMA); la API no tiene autenticación (deliberado para consumo local, ver
+[CORS](#cors) — no apto para exponer a Internet sin añadir alguna protección); no existe
+todavía una entidad de dominio `Drug` desacoplada del modelo ORM; y la extracción de
+`PrescriptionAgent` se persiste como registro auditable en JSON crudo, no normalizada a la
+entidad de dominio estricta `Prescription`/`PrescribedDrug` (ver la nota de diseño en
 [prescription_record_model.py](src/infrastructure/models/prescription_record_model.py)).

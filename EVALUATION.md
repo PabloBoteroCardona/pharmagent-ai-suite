@@ -48,8 +48,8 @@ re-ejecutable bajo demanda.
 
 Los 3 casos cubiertos por la base curada responden en ~0s (sin llamada a Ollama, tal como
 diseñado — ver "Diseño híbrido" en `safety_agent.py`). Los 4 casos que requieren
-razonamiento del LLM tardan 3-20s, coherente con la latencia real de `llama3` en CPU sin GPU
-(ver nota de arranque en frío en [.memory/BUGS.md](.memory/BUGS.md)).
+razonamiento del LLM tardan 3-20s, coherente con la latencia real de `llama3` en CPU sin GPU,
+incluyendo el arranque en frío conocido de Ollama.
 
 ### `PrescriptionAgent` — recall medio = 1.0 (3/3 casos, extracción perfecta)
 

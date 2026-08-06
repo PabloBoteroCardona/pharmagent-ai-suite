@@ -5,7 +5,7 @@ las herramientas conceptuales invocadas por los agentes descritos en [AGENTS.md]
 
 **Estado real de la implementación**: estos esquemas documentan el diseño original de un
 posible futuro tool-calling declarativo (Google ADK). La implementación actual no usa ADK ni
-`src/adapters/adk/` (eliminado en [BLOQUE A], ver [.memory/DECISIONS.md](.memory/DECISIONS.md))
+`src/adapters/adk/` (eliminado por estar vacío y redundante con `src/infrastructure/`)
 — cada agente es invocado directamente como método `async` de una clase Python desde su
 endpoint REST correspondiente, con un contrato de entrada/salida más simple definido en
 [drug_schemas.py](src/infrastructure/api/schemas/drug_schemas.py). Cada sección de este
@@ -232,11 +232,11 @@ apartado se cumple: `HIGH`/`SEVERE` fuerza siempre `requiere_revision_medica`, n
 sea cual sea la fuente.
 
 **Diseño híbrido (BLOQUE D)**: ya no es "sin LLM" — es una búsqueda determinista contra una
-base curada de 6 interacciones en memoria (autoritativa, `source: "curated"`), y **solo si
+base curada (20 interacciones en memoria, autoritativa, `source: "curated"`), y **solo si
 ninguna coincide**, un razonamiento complementario vía `llama3` local (`source: "llm"`),
 acercándose al diseño objetivo de un `SafetyCheckAgent` basado en `llama-3.1` — sin el
-*fallback* a Gemini remoto descrito originalmente (no implementado, ver limitación aceptada
-en [.memory/DECISIONS.md](.memory/DECISIONS.md)). Verificado con 7/7 veredictos correctos
+*fallback* a Gemini remoto descrito originalmente (no implementado, limitación aceptada).
+Verificado con 7/7 veredictos correctos
 sobre un dataset de evaluación sintético (3 casos de base curada + 4 de razonamiento LLM) —
 ver [EVALUATION.md](EVALUATION.md) para metodología completa, latencias reales, y un
 hallazgo relevante sobre un timeout de Ollama que produjo un acierto por coincidencia (no
@@ -418,8 +418,8 @@ reales — ver "Verificación" en [AGENTS.md](AGENTS.md#3-ragpharmagent).
 
 ## Ubicación en el código
 
-Tabla de diseño objetivo (ADK), no implementada — `src/adapters/adk/` fue eliminado en
-[BLOQUE A](.memory/DECISIONS.md) por estar vacío y redundante. La implementación real es:
+Tabla de diseño objetivo (ADK), no implementada — `src/adapters/adk/` fue eliminado por
+estar vacío y redundante con `src/infrastructure/`. La implementación real es:
 
 | Tool (diseño objetivo) | Implementación real | Puerto de dominio real | Endpoint REST |
 |---|---|---|---|

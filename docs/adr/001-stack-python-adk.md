@@ -4,6 +4,16 @@
 
 Aceptado — 2026-08-04.
 
+> **Nota de estado real (añadida posteriormente, no reescribe la decisión original):**
+> la sección 4 (Google ADK) describe el diseño conceptual objetivo en el momento de
+> esta decisión, pero no se adoptó en la implementación final — los tres agentes
+> (`PrescriptionAgent`, `SafetyCheckAgent`, `RAGPharmAgent`) son clases Python `async`
+> simples que dependen de puertos de dominio (`src/domain/ports/`), sin el SDK de
+> Google ADK ni la carpeta `src/adapters/adk/` descrita más abajo. El resto de la
+> decisión (Python, Clean Architecture, FastAPI, PostgreSQL + pgvector) sí se mantiene
+> tal cual. Ver la nota "Estado real" en [AGENTS.md](../../AGENTS.md) para el detalle
+> agente por agente.
+
 ## Contexto
 
 PharmAgent AI Suite es un Trabajo de Fin de Máster (TFM) que implementa un sistema

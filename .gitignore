@@ -83,3 +83,7 @@ evaluation/synthetic_prescriptions/
 
 # --- Codegraph (Para mapear una base de código en un grafo de dependencias y conocimiento ) ---
 .codegraph/
+
+# --- Memoria de trabajo local entre sesiones de desarrollo asistido (no es documentación
+# pública del producto — ver la nota en CLAUDE.md) ---
+.memory/
