@@ -294,5 +294,5 @@ respuesta completa citando los 3 medicamentos de losartán encontrados.
   resultado de `ProcessPrescriptionUseCase` como registro auditable.
 - **CORS (BLOQUE D)**: `settings.cors_allowed_origins` (`["*"]` por defecto en desarrollo
   local/CI). La API REST no exige autenticación — se sirve abierta para consumo del frontend
-  local (Streamlit); ver [.memory/DECISIONS.md](.memory/DECISIONS.md), "API REST abierta
-  para consumo local".
+  local (SPA en `frontend/`, ver [README.md](README.md#frontend-spa)); ver
+  [.memory/DECISIONS.md](.memory/DECISIONS.md), "API REST abierta para consumo local".

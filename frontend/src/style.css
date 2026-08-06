@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+:root {
+  font-family: "Inter", "Segoe UI", sans-serif;
+}
+
+.font-mono,
+code,
+pre {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+}
+
+@layer components {
+  .tab-button {
+    @apply flex-1 rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 transition hover:text-slate-900;
+  }
+  .tab-button[aria-selected="true"] {
+    @apply bg-white text-sky-700 shadow-sm;
+  }
+
+  .markdown-body :where(p) {
+    @apply mb-2 last:mb-0;
+  }
+  .markdown-body :where(ul, ol) {
+    @apply mb-2 ml-5 list-outside space-y-1 last:mb-0;
+  }
+  .markdown-body :where(ul) {
+    @apply list-disc;
+  }
+  .markdown-body :where(ol) {
+    @apply list-decimal;
+  }
+  .markdown-body :where(strong) {
+    @apply font-semibold text-slate-900;
+  }
+  .markdown-body :where(code) {
+    @apply rounded bg-slate-100 px-1 py-0.5 text-xs;
+  }
+}

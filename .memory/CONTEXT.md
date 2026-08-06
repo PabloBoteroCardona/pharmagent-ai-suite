@@ -19,7 +19,18 @@ herramientas, y [EVALUATION.md](../EVALUATION.md) para su evaluación cuantitati
 
 ## Estado actual
 
-**CI (`quality` job) en rojo por cobertura, no por lint/tests — ✅ corregido.** El commit de
+**Frontend Streamlit sustituido por una SPA en TypeScript/Tailwind CSS v4/Vite (`frontend/`)
+— ✅ completado.** El usuario pidió un frontend "profesional", primero como rediseño CSS del
+panel Streamlit y luego (cambio de planes antes de implementar nada) como sustitución
+completa por un frontend web tradicional. Ver "Último hito verificado" para el detalle
+completo y [DECISIONS.md](DECISIONS.md) para la decisión de arquitectura. `src/presentation/`
+ya no existe.
+
+---
+
+**CI (`quality` job) en rojo por cobertura, no por lint/tests — ✅ corregido (nota: la causa
+raíz de este hito, la exclusión de `src/presentation/*` en `.coveragerc`, quedó obsoleta tras
+la eliminación completa de ese directorio — ver el hito más reciente arriba).** El commit de
 la mejora de `/consult` (ficha técnica + prospecto) se comiteó y empujó a `origin/main` fuera
 de esta conversación (por el usuario, probablemente desde su IDE) sin pasar antes por
 `pytest --cov`. Al reproducir el pipeline exacto de CI localmente: `ruff check .`/`ruff
@@ -82,6 +93,40 @@ de métrica de relevancia encontrado y corregido durante la verificación contra
 real). Todos los bloques A/B/C/D están cerrados y verificados, más esta corrección posterior.
 
 ## Último hito verificado
+
+**Frontend Streamlit sustituido por una SPA en TypeScript/Tailwind CSS v4/Vite.** Ver
+[DECISIONS.md](DECISIONS.md) para el detalle completo (contexto, diseño y verificación con
+servicios reales vía Playwright). Resumen ejecutivo:
+
+- `src/presentation/` (panel Streamlit) eliminado por completo — `app.py`,
+  `tests/unit/test_presentation_app.py`, la dependencia `streamlit` de `requirements.txt` y
+  el `omit` correspondiente de `.coveragerc`.
+- [frontend/](../frontend/) nuevo: SPA estática sin framework de UI (DOM directo), TypeScript
+  estricto + Vite 8 + Tailwind CSS v4 (`@tailwindcss/vite`, sin `tailwind.config.js`).
+  Estructura: `api.ts` (cliente HTTP tipado, único módulo que conoce `API_BASE_URL`),
+  `types.ts` (espejo manual de `drug_schemas.py`), `ui.ts` (badges/chips/tarjetas
+  compartidos), `state.ts` (historial en `localStorage`), `markdown.ts` (`marked` +
+  `dompurify` para la síntesis del RAG), `toast.ts`, y tres módulos de vista
+  (`viewConsult.ts`, `viewInteractions.ts`, `viewPrescription.ts`) orquestados desde
+  `main.ts`. Paleta clínica exacta pedida por el usuario (slate-900/sky-600/teal-600/
+  amber-600/red-600).
+- **Verificado contra servicios reales, no solo `npm run build`**: backend real (Postgres +
+  Ollama en Docker, Alembic al día, Uvicorn) + `npm run dev`, navegados con Playwright
+  (Chromium real). Las 3 vistas probadas de extremo a extremo con datos reales: consulta RAG
+  sobre ibuprofeno (respuesta real de Groq, CIMA en vivo), interacciones warfarina+aspirina
+  (veredicto `requiere_revision_medica` real, base curada), y receta sintética real
+  (`evaluation/synthetic_prescriptions/rx-two-drugs.jpg`) con extracción real de Gemini +
+  auditoría LLM + fichas CIMA en vivo por fármaco. Responsive verificado en viewport móvil
+  (390×844, sidebar en cajón con botón de hamburguesa). `console --errors` vacío en todos los
+  casos.
+- Una discrepancia visual aparente en una captura (pestaña resaltada distinta del contenido
+  mostrado) se verificó contra el DOM real antes de reportarla como bug — resultó ser una
+  lectura equivocada de los iconos emoji en Chromium headless, no un fallo de código (detalle
+  en DECISIONS.md, para no repetir la comprobación si reaparece la misma duda).
+- `README.md`/`AGENTS.md` actualizados: nueva sección "Frontend (SPA)", requisito de Node.js
+  20+, referencias a Streamlit sustituidas por la SPA en CORS y en la sección de cobertura.
+
+---
 
 **Documentación enriquecida en `/consult`: ficha técnica + prospecto + enlaces oficiales de
 CIMA.** Ver [DECISIONS.md](DECISIONS.md) para el detalle completo. Resumen ejecutivo:
@@ -565,13 +610,10 @@ la escritura real en Postgres sigue bloqueada por el bug de `asyncpg`/Windows �
 ## Siguiente paso pendiente
 
 Sin un PASO/BLOQUE numerado asignado todavía — [BLOQUE A]/[B]/[C]/[D] están todos cerrados y
-verificados, la corrección posterior de CIMA en vivo en `/search`/`/consult`, y el panel web
-Streamlit, también. Candidatos para un bloque futuro (no priorizados por el usuario):
-
-0. Lanzar la API (`uvicorn src.infrastructure.api.main:app --port 8000`) y el panel
-   (`streamlit run src/presentation/app.py`) juntos y probar el flujo completo en navegador
-   real (subida de receta real, chat, verificador) — hecho solo un arranque headless de
-   humo (`GET /` → 200), no una sesión de usuario real con la API activa detrás.
+verificados, la corrección posterior de CIMA en vivo en `/search`/`/consult`, y el nuevo
+frontend SPA (`frontend/`), también — ya probado de extremo a extremo en navegador real con
+servicios reales (ver "Último hito verificado"). Candidatos para un bloque futuro (no
+priorizados por el usuario):
 
 1. Desacoplar `DrugRepositoryPort` de `DrugModel` (ORM) con una entidad de dominio `Drug`
    pura (limitación aceptada desde BLOQUE A).

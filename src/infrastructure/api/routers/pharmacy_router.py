@@ -1,6 +1,6 @@
 """Endpoints REST de farmacia: búsqueda semántica y consulta al `RAGPharmAgent`.
 
-Sin autenticación: la API se sirve abierta para consumo del frontend local (Streamlit) —
+Sin autenticación: la API se sirve abierta para consumo del frontend local (`frontend/`) —
 ver [.memory/DECISIONS.md](../../../.memory/DECISIONS.md), "API REST abierta para consumo
 local". Apropiado solo para desarrollo/demo local; un despliegue expuesto a Internet
 necesitaría reinstaurar algún mecanismo de autenticación.

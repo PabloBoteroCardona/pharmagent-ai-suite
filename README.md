@@ -11,6 +11,7 @@ de fichas técnicas oficiales de medicamentos autorizados en España (AEMPS/CIMA
 - [Requisitos previos](#requisitos-previos)
 - [Instrucciones de despliegue en local](#instrucciones-de-despliegue-en-local)
 - [Despliegue con Docker Compose](#despliegue-con-docker-compose)
+- [Frontend (SPA)](#frontend-spa)
 - [Endpoints de la API](#endpoints-de-la-api)
 - [CORS](#cors)
 - [Pruebas automatizadas y cobertura](#pruebas-automatizadas-y-cobertura)
@@ -67,6 +68,7 @@ suficiente. Ver el detalle de esta y otras decisiones de arquitectura en
 | Configuración | `pydantic-settings` (fuente única de variables de entorno) |
 | Contenedores | Docker, Docker Compose |
 | Calidad | Ruff (lint + format), Pytest + `pytest-cov` (umbral 85%), GitHub Actions (lint/tests + migraciones) |
+| Frontend | SPA estática en TypeScript + Tailwind CSS v4, Vite (`frontend/`) — cliente puro de la API REST, ver [Frontend (SPA)](#frontend-spa) |
 
 ### Arquitectura: Clean Architecture / monolito modular
 
@@ -115,6 +117,7 @@ agentes.
 ## Requisitos previos
 
 - **Python 3.11+** (desarrollado y probado con 3.14).
+- **Node.js 20+** (solo para el frontend, ver [Frontend (SPA)](#frontend-spa)).
 - **Docker** y **Docker Compose** (para PostgreSQL + pgvector, Ollama y, opcionalmente, la
   propia API).
 - Una **API key de Google Gemini** (opcional — solo necesaria para probar
@@ -207,6 +210,42 @@ de `localhost`. Tras el arranque, poblar la caché semántica igual que en el pa
 ```bash
 docker exec pharmagent_api python -m scripts.ingest_drugs
 ```
+
+## Frontend (SPA)
+
+[frontend/](frontend/) es una SPA estática (TypeScript + Tailwind CSS v4, compilada con Vite)
+que consume la API REST vía `fetch` — un cliente externo más, igual que el panel Streamlit
+que sustituye: no importa nada del backend Python, solo conoce `VITE_API_BASE_URL`
+(`http://localhost:8000` por defecto) y los contratos JSON de
+[drug_schemas.py](src/infrastructure/api/schemas/drug_schemas.py) (espejados a mano en
+[frontend/src/types.ts](frontend/src/types.ts)).
+
+```bash
+cd frontend
+npm install
+cp .env.example .env.local   # opcional, solo si la API no está en localhost:8000
+npm run dev                  # servidor de desarrollo en http://localhost:5173
+```
+
+`npm run build` genera la versión de producción en `frontend/dist/` (sin paso de servidor:
+son ficheros estáticos que puede servir cualquier CDN/hosting estático, apuntando
+`VITE_API_BASE_URL` a la API desplegada).
+
+Tres vistas sobre la misma barra de navegación, sin login ni fricción de acceso:
+
+1. **Consulta Clínica** (`POST /consult`) — prompter de pregunta en lenguaje natural,
+   síntesis en Markdown, badge de latencia medida en cliente y chip de procedencia
+   (`cache`/`live`/`none`), fuentes CIMA en un desplegable. Historial de consultas
+   persistido en `localStorage`, reutilizable con un clic desde la barra lateral.
+2. **Interacciones** (`POST /check-interactions`) — lista dinámica de fármacos, veredicto y
+   tarjetas de riesgo coloreadas por severidad (verde/ámbar/rojo).
+3. **Receta** (`POST /process-prescription`) — subida de imagen con vista previa,
+   extracción + auditoría de seguridad automática, y ficha CIMA por fármaco extraído
+   (`POST /search`).
+
+La barra lateral muestra el estado de `/health` (comprobado en vivo) y, como información
+declarada (no verificada en vivo, al no existir un endpoint de estado para ellos), la pila
+de persistencia y el motor LLM en uso.
 
 ## Endpoints de la API
 
@@ -352,7 +391,7 @@ completo se persiste como registro auditable en la tabla `prescription_records` 
 ## CORS
 
 La API no requiere ninguna autenticación — se sirve abierta para consumo del frontend local
-(Streamlit) y de la evaluación del TFM sin fricción (ver
+(SPA en `frontend/`) y de la evaluación del TFM sin fricción (ver
 [.memory/DECISIONS.md](.memory/DECISIONS.md), "API REST abierta para consumo local"; solo
 apropiado para desarrollo/demo local, no para un despliegue expuesto a Internet):
 
@@ -379,11 +418,10 @@ sustituyen por dobles en memoria vía `app.dependency_overrides` de FastAPI (ver
 mocks directos para los clientes HTTP individuales (`tests/unit/test_cima_client.py`,
 `test_ollama_client.py`, `test_groq_client.py`, `test_gemini_client.py`), aprovechando que la
 propia arquitectura de puertos del dominio hace estos dobles triviales de construir.
-Cobertura actual: **~89%** de la lógica de negocio (backend). `src/presentation/` (el panel
-Streamlit — un cliente HTTP fino sobre la API REST, sin lógica propia) queda fuera del
-cómputo (`omit` en [.coveragerc](.coveragerc)): se verifica manualmente y con
-`streamlit.testing.v1.AppTest` de forma puntual, no con la suite de pytest. Umbral de CI:
-85%. El pipeline de integración continua ([.github/workflows/ci.yml](.github/workflows/ci.yml))
+Cobertura actual: **~89%** de la lógica de negocio (backend); el frontend (`frontend/`) es
+TypeScript fuera de este cómputo de `pytest-cov` — se verifica manualmente en navegador real
+(ver [Frontend (SPA)](#frontend-spa)), no con la suite de pytest. Umbral de CI: 85%. El
+pipeline de integración continua ([.github/workflows/ci.yml](.github/workflows/ci.yml))
 ejecuta lint, formato, tests con cobertura, y un job independiente que aplica y revierte las
 migraciones Alembic contra un Postgres real de servicio — todo en cada `push`/`pull_request`
 a `main`.

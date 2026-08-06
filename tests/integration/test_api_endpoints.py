@@ -259,7 +259,7 @@ class TestProcessPrescriptionEndpoint:
 
 
 class TestNoAuthenticationRequired:
-    """La API REST se sirve abierta para consumo del frontend local (Streamlit) — ningún
+    """La API REST se sirve abierta para consumo del frontend local (`frontend/`) — ningún
     endpoint exige la cabecera `X-API-Key`, se envíe o no (ver .memory/DECISIONS.md, "API
     REST abierta para consumo local")."""
 

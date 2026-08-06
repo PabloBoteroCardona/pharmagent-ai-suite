@@ -1,13 +1,6 @@
 [run]
 source = src
 branch = True
-# src/presentation/ es el panel Streamlit: un cliente HTTP fino sobre la API REST, sin
-# lógica de negocio (ver docstring del módulo) — se verifica manualmente y con
-# streamlit.testing.v1.AppTest de forma puntual, no con la suite de pytest. Incluirlo en
-# el umbral de cobertura de la lógica de negocio (backend) no aporta señal real y penaliza
-# el umbral por código de renderizado, no por lógica sin probar.
-omit =
-    src/presentation/*
 
 [report]
 exclude_lines =

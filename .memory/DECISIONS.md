@@ -3,6 +3,73 @@
 Registro de decisiones clave de arquitectura tomadas durante el desarrollo, complementario a
 los ADR formales en [docs/adr/](../docs/adr/).
 
+## Sustitución del panel Streamlit por una SPA estática (TypeScript + Tailwind CSS v4 + Vite)
+
+**Contexto**: el usuario renombró el proyecto a "PharmAgent" y pidió un frontend "visualmente
+atractivo y de profesionalidad, no un producto sin más como está ahora mismo". Primera
+propuesta: un "prompt maestro" para rediseñar el panel Streamlit existente (CSS clínico
+inyectado, paleta slate/sky/teal/amber/crimson). Antes de implementarlo, el usuario canceló
+("cambio de planes") y sustituyó el prompt por uno nuevo: descartar Streamlit por completo y
+construir un frontend web tradicional (HTML5 + Tailwind CSS + TypeScript) que consuma la
+misma API REST, con la misma paleta clínica. Confirmado explícitamente con el usuario: (a)
+eliminar `src/presentation/` en vez de mantenerlo en paralelo, y (b) TypeScript con build
+ligero (Vite) en vez de JavaScript plano sin build.
+
+**Decisión**: `src/presentation/` (panel Streamlit, `api_post`/`check_api_health`, CSS
+inyectado vía `st.markdown`) eliminado por completo, junto con
+`tests/unit/test_presentation_app.py`, la dependencia `streamlit` en `requirements.txt`, y el
+`omit = src/presentation/*` de `.coveragerc` (ver la entrada anterior de este archivo,
+"`src/presentation/` excluido del umbral de cobertura de CI" — queda como historial de una
+decisión ya superada, no vigente). En su lugar, [frontend/](../frontend/): SPA estática sin
+framework de UI (DOM directo vía `innerHTML`/plantillas de cadena — no React/Vue, no
+justificado por el tamaño de la app: 3 vistas, sin routing más allá de pestañas), TypeScript
+estricto compilado con Vite 8, Tailwind CSS v4 vía `@tailwindcss/vite` (sin
+`tailwind.config.js`: la v4 usa `@import "tailwindcss"` + escaneo automático). `marked` +
+`dompurify` para renderizar la síntesis Markdown de `/consult` de forma segura (la respuesta
+del LLM se inserta con `innerHTML`, nunca sin sanitizar).
+
+**Diseño**: mismo principio de desacoplo que tenía el panel Streamlit — `frontend/src/api.ts`
+es el único módulo que conoce `API_BASE_URL` (`VITE_API_BASE_URL`, por defecto
+`http://localhost:8000`) y los contratos JSON de la API; `frontend/src/types.ts` espeja a
+mano los esquemas Pydantic de `drug_schemas.py` (sin generación automática de tipos — mantener
+sincronizado manualmente si el backend cambia sus schemas). Latencia medida en cliente con
+`performance.now()` alrededor de cada `fetch` (no hay endpoint de tiempos en el backend);
+badges de severidad/veredicto/procedencia con la paleta clínica pedida (slate-900 / sky-600 /
+teal-600 / amber-600 / red-600). Historial de consultas persistido en `localStorage`
+(zero-friction: sobrevive a recargar la página, sin backend). Estado de conexión de la
+sidebar: solo el indicador de `/health` es una comprobación en vivo; "PostgreSQL + pgvector" y
+"Groq · Llama 3.1-8b-instant" se muestran como información declarada, no verificada (no existe
+endpoint de estado para ellos) — decisión deliberada para no fabricar una señal de monitorización
+que no existe.
+
+**Verificación con servicios reales, no solo `npm run build`**: `tsc -b && vite build` limpio
+(sin errores de tipos). Backend real levantado (`docker compose up -d postgres ollama`,
+`alembic upgrade head`, `uvicorn`) + `npm run dev` (Vite en `:5173`), navegados con Playwright
+(Chromium real, no un mock de DOM):
+- **Consulta Clínica**: `drug_name=ibuprofeno` + pregunta de dosis → respuesta real de Groq en
+  Markdown (lista de dosis), badge `⚡ 3167ms · Groq · Llama 3.1-8b-instant`, chip `CIMA en
+  vivo`, historial actualizado en la sidebar.
+- **Interacciones**: `warfarina` + `aspirina` → veredicto real `REQUIERE REVISIÓN MÉDICA`
+  (rojo), tarjeta `GRAVE` con fuente `Base curada`, `⚡ 194ms`.
+- **Receta**: imagen sintética real (`evaluation/synthetic_prescriptions/rx-two-drugs.jpg`) →
+  extracción real de Gemini (amoxicilina + paracetamol), auditoría `APTO CON PRECAUCIÓN` vía
+  razonamiento LLM de Groq, y ficha CIMA en vivo por fármaco (nº registro, principios activos,
+  laboratorio) — las 3 llamadas reales (`/process-prescription`, `/check-interactions`
+  implícito, `/search` ×2) encadenadas correctamente.
+- **Responsive**: viewport móvil (390×844) con sidebar colapsada tras un botón de hamburguesa,
+  verificado abierta y cerrada.
+- `console --errors` vacío en las 3 vistas y en ambos viewports.
+
+**Bug real descartado tras verificar, no asumido**: una captura de pantalla de la vista
+"Receta" parecía mostrar la pestaña "Interacciones" resaltada mientras el contenido visible
+era el formulario de receta (aparente desincronización pestaña/contenido). Antes de reportarlo
+como bug se verificó el DOM real con Playwright (`aria-selected` de los 3 botones + `hidden`
+de las 3 vistas): el estado era correcto en los tres casos — el error era una lectura visual
+equivocada de los iconos emoji renderizados por Chromium headless, no un bug de código.
+Documentado aquí para no repetir la comprobación si se reproduce la misma duda visual.
+
+---
+
 ## `src/presentation/` excluido del umbral de cobertura de CI
 
 **Contexto**: el job `quality` de GitHub Actions falló tras empujar el commit de la mejora de
