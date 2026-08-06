@@ -104,6 +104,113 @@ _KNOWN_INTERACTIONS: tuple[DrugInteraction, ...] = (
             "bajas es generalmente seguro."
         ),
     ),
+    DrugInteraction(
+        primary_drug="sildenafilo",
+        secondary_drug="nitroglicerina",
+        severity=InteractionSeverity.SEVERE,
+        description=(
+            "Ambos potencian la vía del óxido nítrico/GMPc: riesgo de hipotensión severa "
+            "potencialmente mortal."
+        ),
+        clinical_recommendation=(
+            "Contraindicado. No administrar sildenafilo (ni otros inhibidores de PDE5) a "
+            "pacientes en tratamiento con nitratos, en ninguna forma o pauta."
+        ),
+    ),
+    DrugInteraction(
+        primary_drug="metformina",
+        secondary_drug="contraste",
+        severity=InteractionSeverity.HIGH,
+        description=(
+            "El contraste yodado puede deteriorar la función renal, reduciendo la "
+            "eliminación de metformina y aumentando el riesgo de acidosis láctica."
+        ),
+        clinical_recommendation=(
+            "Suspender la metformina antes de la administración de contraste yodado y "
+            "reanudarla solo tras confirmar función renal normal (habitualmente 48 h "
+            "después)."
+        ),
+    ),
+    DrugInteraction(
+        primary_drug="litio",
+        secondary_drug="ibuprofeno",
+        severity=InteractionSeverity.HIGH,
+        description=(
+            "Los AINE reducen la excreción renal de litio, elevando la litemia y el "
+            "riesgo de toxicidad (temblor, confusión, insuficiencia renal)."
+        ),
+        clinical_recommendation=(
+            "Evitar la combinación si es posible; si es necesaria, monitorizar litemia y "
+            "función renal estrechamente."
+        ),
+    ),
+    DrugInteraction(
+        primary_drug="digoxina",
+        secondary_drug="amiodarona",
+        severity=InteractionSeverity.HIGH,
+        description=(
+            "La amiodarona inhibe la glicoproteína P y reduce el aclaramiento de "
+            "digoxina, elevando sus niveles plasmáticos y el riesgo de toxicidad "
+            "digitálica."
+        ),
+        clinical_recommendation=(
+            "Reducir la dosis de digoxina (habitualmente a la mitad) al iniciar "
+            "amiodarona y monitorizar niveles plasmáticos y síntomas de toxicidad."
+        ),
+    ),
+    DrugInteraction(
+        primary_drug="warfarina",
+        secondary_drug="rifampicina",
+        severity=InteractionSeverity.MEDIUM,
+        description=(
+            "La rifampicina es un inductor enzimático potente (CYP2C9) que acelera el "
+            "metabolismo de la warfarina, reduciendo su efecto anticoagulante."
+        ),
+        clinical_recommendation=(
+            "Monitorizar INR con mayor frecuencia al iniciar o suspender rifampicina y "
+            "ajustar la dosis de warfarina según respuesta."
+        ),
+    ),
+    DrugInteraction(
+        primary_drug="metronidazol",
+        secondary_drug="alcohol",
+        severity=InteractionSeverity.MEDIUM,
+        description=(
+            "Reacción de tipo disulfiram (náuseas, vómitos, rubefacción, taquicardia) por "
+            "inhibición de la aldehído deshidrogenasa."
+        ),
+        clinical_recommendation=(
+            "Evitar el consumo de alcohol durante el tratamiento con metronidazol y hasta "
+            "48 horas después de finalizarlo."
+        ),
+    ),
+    DrugInteraction(
+        primary_drug="enalapril",
+        secondary_drug="ibuprofeno",
+        severity=InteractionSeverity.MEDIUM,
+        description=(
+            "Los AINE pueden reducir el efecto antihipertensivo de los IECA y, "
+            "especialmente combinados con diuréticos, aumentar el riesgo de deterioro de "
+            "la función renal."
+        ),
+        clinical_recommendation=(
+            "Usar la dosis eficaz más baja de AINE durante el menor tiempo posible y "
+            "vigilar presión arterial y función renal, sobre todo en tratamiento crónico."
+        ),
+    ),
+    DrugInteraction(
+        primary_drug="clopidogrel",
+        secondary_drug="omeprazol",
+        severity=InteractionSeverity.MEDIUM,
+        description=(
+            "El omeprazol inhibe el CYP2C19, reduciendo la conversión de clopidogrel a su "
+            "metabolito activo y disminuyendo su efecto antiagregante."
+        ),
+        clinical_recommendation=(
+            "Si se necesita protección gástrica, valorar un IBP con menor interacción "
+            "(p. ej. pantoprazol) o espaciar la administración."
+        ),
+    ),
 )
 
 _REVIEW_SEVERITIES = frozenset({InteractionSeverity.HIGH, InteractionSeverity.SEVERE})

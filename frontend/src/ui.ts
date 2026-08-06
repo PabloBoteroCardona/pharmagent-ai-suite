@@ -11,7 +11,11 @@ import type { InteractionResult, Severity, SourceKind, InteractionSourceKind, Ve
 export function escapeHtml(value: string): string {
   const div = document.createElement("div");
   div.textContent = value;
-  return div.innerHTML;
+  // `div.innerHTML` escapa `<`, `>` y `&` pero no comillas (no hacen falta dentro de texto).
+  // Varios call sites interpolan el resultado dentro de un atributo con comillas dobles (p.
+  // ej. `<option value="${escapeHtml(nombre)}">` en `autocomplete.ts`), así que hay que
+  // escaparlas también aquí para que sea seguro en los dos contextos, no solo en texto.
+  return div.innerHTML.replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
 
 const SEVERITY_STYLE: Record<string, { classes: string; label: string }> = {
