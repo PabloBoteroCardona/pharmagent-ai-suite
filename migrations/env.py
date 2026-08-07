@@ -30,7 +30,14 @@ if config.config_file_name is not None:
 # `settings.database_url` (pydantic-settings, ver BLOQUE A) es la única fuente de verdad
 # para la URL de conexión — sustituye el placeholder `driver://user:pass@...` de
 # `alembic.ini` para no duplicar la configuración de la base de datos.
-config.set_main_option("sqlalchemy.url", settings.database_url)
+#
+# `.replace("%", "%%")`: `Config.set_main_option` escribe en un `configparser.ConfigParser`
+# interno, cuya interpolación por defecto trata `%` como sintaxis especial (`%(nombre)s`) —
+# una URL con una contraseña que contenga `%` (p. ej. tras aplicar percent-encoding a un
+# carácter especial, `/` → `%2F`) rompe `set_main_option` con
+# `ValueError: invalid interpolation syntax` si no se escapa antes. Workaround documentado
+# por el propio Alembic para URLs con caracteres especiales en la contraseña.
+config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
 
 # `Base.metadata` (poblada al importar los modelos ORM arriba) habilita `--autogenerate`.
 target_metadata = Base.metadata
