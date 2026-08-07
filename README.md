@@ -655,3 +655,15 @@ todavía una entidad de dominio `Drug` desacoplada del modelo ORM; y la extracci
 `PrescriptionAgent` se persiste como registro auditable en JSON crudo, no normalizada a la
 entidad de dominio estricta `Prescription`/`PrescribedDrug` (ver la nota de diseño en
 [prescription_record_model.py](src/infrastructure/models/prescription_record_model.py)).
+
+**Mejora futura identificada, no implementada**: el razonamiento del LLM en
+`SafetyCheckAgent` para combinaciones no cubiertas por la base curada (`source: "llm"`) es
+conocimiento paramétrico del modelo, no *grounded* en ningún documento — a diferencia de
+`RAGPharmAgent`, que sí recupera texto real de CIMA antes de responder. No es un descuido:
+CIMA/AEMPS no publica ningún endpoint de interacciones farmacológicas, así que no hay un
+documento equivalente que recuperar para ese dato concreto. Sin embargo, la ficha técnica
+oficial de cada fármaco sí incluye una sección de interacciones (punto 4.5, "Interacción con
+otras formas de interacción") — un trabajo futuro razonable sería pasarle esas secciones al
+LLM como contexto (mismo patrón RAG que ya usa `RAGPharmAgent`) en vez de dejarlo razonar sin
+ningún texto de referencia, acercando la fiabilidad del camino LLM a la del resto del
+sistema.

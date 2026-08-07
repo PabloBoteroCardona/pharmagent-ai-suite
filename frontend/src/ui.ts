@@ -83,11 +83,9 @@ export function llmOnlyDisclaimerHtml(): string {
     <div class="flex items-start gap-2 rounded-xl border border-warning-200 bg-warning-50 p-3 text-sm text-warning-800">
       <span>⚠️</span>
       <p>
-        Ninguno de estos fármacos está en la base curada interna. Este resultado es
-        <strong>razonamiento de un modelo de lenguaje</strong>, no un dato verificado contra
-        CIMA/AEMPS (que no publica un registro de interacciones) ni contra ninguna base de
-        datos clínica oficial — puede variar en fraseo entre consultas y debe confirmarse
-        siempre con un profesional sanitario.
+        Este resultado es <strong>razonamiento de un modelo de lenguaje</strong>, puede
+        variar en fraseo entre consultas y debe confirmarse siempre con un profesional
+        sanitario.
       </p>
     </div>`;
 }
