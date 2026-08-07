@@ -80,7 +80,9 @@ escaneo o PDF) mediante comprensión multimodal.
   - **Desarrollo local**: mitigaciones en profundidad — `SYSTEM_PROMPT` instruye a no incluir
     ningún dato identificativo en la respuesta; el resultado extraído es lo único que se
     persiste (la imagen no se guarda en disco ni en logs); el frontend exige una casilla de
-    confirmación explícita antes de habilitar el envío.
+    confirmación explícita antes de habilitar el envío, junto a un aviso de que subir datos
+    identificativos de terceros con un dato de salud sin su consentimiento puede infringir el
+    RGPD/LOPDGDD.
   - **Pendiente**: no hay todavía una capa de observabilidad que filtre explícitamente PII de
     las trazas de Sentry (BLOQUE B solo cablea la captura de errores a nivel de aplicación,
     sin scrubbing específico de este flujo); un uso real con pacientes reales, más allá de

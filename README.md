@@ -76,7 +76,10 @@ distinta según el entorno:
   resultado extraído es lo único que se persiste (**la imagen nunca se guarda**, ni en la
   base de datos ni en logs); el *system prompt* de `GeminiClient` instruye explícitamente a
   no incluir ningún dato identificativo en la respuesta; el frontend exige una casilla de
-  confirmación antes de habilitar el envío. Lo que ninguna de ellas evita: **Google procesa
+  confirmación antes de habilitar el envío, con un aviso explícito de que subir datos
+  identificativos de otra persona junto a un dato de salud sin su consentimiento puede
+  constituir una infracción del RGPD/LOPDGDD (`frontend/index.html`, sección
+  `prescription-upload-section`). Lo que ninguna de ellas evita: **Google procesa
   la imagen completa en sus servidores** antes de que cualquier filtro nuestro pueda actuar
   — sujeto a los términos de tratamiento de datos de Google, no a los nuestros. Un uso real
   con pacientes reales necesitaría además un acuerdo de encargado de tratamiento con Google.
@@ -603,6 +606,10 @@ ingesta desde CIMA (por lotes y automática al consultar), las migraciones versi
 suite de tests con cobertura medida en ambos lados (backend y frontend) y el pipeline de CI
 de 3 jobs están implementados y verificados contra servicios reales — no solo contra dobles
 de test.
+
+Ver [docs/audit_report.md](docs/audit_report.md) para la auditoría técnica completa
+(arquitectura/DIP, seguridad/RGPD, resiliencia, observabilidad, CI/CD) con los 9 hallazgos
+encontrados, priorizados P0/P1/P2, y su verificación de cierre contra código y tests reales.
 
 Limitaciones conocidas y aceptadas (fuera de alcance hasta ahora): la base curada de
 `SafetyCheckAgent` (20 pares) sigue siendo de demostración, no una fuente clínica completa —
