@@ -11,7 +11,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-# revision identifiers, used by Alembic.
+# Identificadores de la revisión, usados por Alembic.
 revision: str = "7862d9ea1d65"
 down_revision: str | Sequence[str] | None = "272aeb551e68"
 branch_labels: str | Sequence[str] | None = None
@@ -19,7 +19,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Upgrade schema."""
+    """Aplica el esquema."""
     # Renombrado, no drop+add: `documento_html` siempre almacenó el prospecto, nunca la
     # ficha técnica (que no se obtenía todavía) — autogenerate lo detecta como columna
     # eliminada + `prospecto_html` nueva, lo que perdería el contenido ya cacheado de los
@@ -31,7 +31,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Downgrade schema."""
+    """Revierte el esquema."""
     op.drop_column("drugs", "ficha_tecnica_url")
     op.drop_column("drugs", "prospecto_url")
     op.drop_column("drugs", "ficha_tecnica_html")

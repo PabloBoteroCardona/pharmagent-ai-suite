@@ -114,20 +114,20 @@ Python y Pydantic**. Las capas externas dependen del dominio a través de interf
 
 ```
 src/
-├── domain/                  # Núcleo: reglas de negocio puras, sin dependencias externas
-│   ├── models/                # Entidades: Prescription, PrescribedDrug, DrugInteraction
-│   └── ports/                  # Interfaces (Protocol) que la infraestructura satisface
-├── application/              # Casos de uso y agentes, dependen solo de domain/ports/
-│   ├── agents/                 # RAGPharmAgent, PrescriptionAgent, SafetyCheckAgent
+├── domain/                      # Núcleo: reglas de negocio puras, sin dependencias externas
+│   ├── models/                  # Entidades: Prescription, PrescribedDrug, DrugInteraction
+│   └── ports/                   # Interfaces (Protocol) que la infraestructura satisface
+├── application/                 # Casos de uso y agentes, dependen solo de domain/ports/
+│   ├── agents/                  # RAGPharmAgent, PrescriptionAgent, SafetyCheckAgent
 │   └── services/                # DrugService (orquestación CIMA + Ollama + pgvector)
-├── use_cases/                # Puntos de entrada explícitos e independientes del transporte
+├── use_cases/                   # Puntos de entrada explícitos e independientes del transporte
 │                                #   ConsultDrugRAGUseCase, ProcessPrescriptionUseCase
-└── infrastructure/           # Framework web, clientes externos, persistencia, configuración
+└── infrastructure/              # Framework web, clientes externos, persistencia, configuración
     ├── api/                     # FastAPI: routers, esquemas Pydantic REST, main.py
-    ├── config/                   # pydantic-settings (única fuente de variables de entorno)
-    ├── external/                  # CimaAPIClient, OllamaClient, GroqClient, GeminiClient
-    ├── models/ · repositories/     # ORM SQLAlchemy + pgvector, repositorios
-    └── database.py                # Motor async de PostgreSQL
+    ├── config/                  # pydantic-settings (única fuente de variables de entorno)
+    ├── external/                # CimaAPIClient, OllamaClient, GroqClient, GeminiClient
+    ├── models/ · repositories/  # ORM SQLAlchemy + pgvector, repositorios
+    └── database.py              # Motor async de PostgreSQL
 
 migrations/                  # Migraciones Alembic (esquema versionado, no create_all)
 evaluation/                  # Dataset sintético + script de evaluación cuantitativa
@@ -150,7 +150,8 @@ agentes.
 
 ## Requisitos previos
 
-- **Python 3.11+** (desarrollado y probado con 3.14).
+- **Python 3.11+** (CI y Docker fijados en 3.12 — ver [Dockerfile](Dockerfile)/
+  [.github/workflows/ci.yml](.github/workflows/ci.yml); verificado también en local con 3.14).
 - **Node.js 20+** (solo para el frontend, ver [Frontend (SPA)](#frontend-spa)).
 - **Docker** y **Docker Compose** (para PostgreSQL + pgvector, Ollama y, opcionalmente, la
   propia API).
@@ -536,13 +537,13 @@ ya tenían (nunca propagan una excepción; degradan a un valor vacío):
 
 ```bash
 # Backend
-pytest                                                  # suite completa (unit + integration)
-pytest --cov=src --cov-report=term-missing              # con reporte de cobertura
-ruff check .                                              # lint
-ruff format --check .                                       # formato
+pytest                                      # suite completa (unit + integration)
+pytest --cov=src --cov-report=term-missing  # con reporte de cobertura
+ruff check .                                # lint
+ruff format --check .                       # formato
 
 # Frontend
-cd frontend && npm test                                 # suite Vitest
+cd frontend && npm test                     # suite Vitest
 ```
 
 La suite de backend (`tests/unit/`, `tests/integration/`) es determinista y no requiere
@@ -600,12 +601,11 @@ duplicada en `alembic.ini`.
 
 ## Estado del proyecto
 
-En resumen: los tres agentes, la
-orquestación end-to-end, la API REST completa (con CORS y persistencia auditable), la
-ingesta desde CIMA (por lotes y automática al consultar), las migraciones versionadas, la
-suite de tests con cobertura medida en ambos lados (backend y frontend) y el pipeline de CI
-de 3 jobs están implementados y verificados contra servicios reales — no solo contra dobles
-de test.
+En resumen: los tres agentes, la orquestación end-to-end, la API REST completa (con CORS y
+persistencia auditable), la ingesta desde CIMA (por lotes y automática al consultar), las
+migraciones versionadas, la suite de tests con cobertura medida en ambos lados (backend y
+frontend) y el pipeline de CI de 3 jobs están implementados y verificados contra servicios
+reales — no solo contra dobles de test.
 
 Ver [docs/audit_report.md](docs/audit_report.md) para la auditoría técnica completa
 (arquitectura/DIP, seguridad/RGPD, resiliencia, observabilidad, CI/CD) con los 9 hallazgos

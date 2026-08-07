@@ -11,29 +11,29 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Clonar el repositorio
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Configurar Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
           cache-dependency-path: requirements.txt
 
-      - name: Install dependencies
+      - name: Instalar dependencias
         run: pip install -r requirements.txt
 
       - name: Lint (ruff check)
         run: ruff check .
 
-      - name: Format check (ruff format)
+      - name: Comprobar formato (ruff format)
         run: ruff format --check .
 
-      - name: Run tests with coverage (pytest-cov)
+      - name: Ejecutar tests con cobertura (pytest-cov)
         run: pytest --cov=src --cov-report=term-missing --cov-report=xml --cov-fail-under=85
 
-      - name: Upload coverage report
+      - name: Subir informe de cobertura
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
@@ -46,23 +46,23 @@ jobs:
         working-directory: frontend
 
     steps:
-      - name: Checkout repository
+      - name: Clonar el repositorio
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install dependencies
+      - name: Instalar dependencias
         run: npm ci
 
-      - name: Run tests (Vitest)
+      - name: Ejecutar tests (Vitest)
         run: npm test
 
-      - name: Type-check and build
+      - name: Comprobar tipos y compilar
         run: npm run build
 
   migrations:
@@ -83,30 +83,30 @@ jobs:
           --health-retries 5
 
     steps:
-      - name: Checkout repository
+      - name: Clonar el repositorio
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Configurar Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
           cache-dependency-path: requirements.txt
 
-      - name: Install dependencies
+      - name: Instalar dependencias
         run: pip install -r requirements.txt
 
-      - name: Apply migrations (upgrade head)
+      - name: Aplicar migraciones (upgrade head)
         env:
           DATABASE_URL: postgresql+asyncpg://pharmagent:pharmagent_pass@localhost:5432/pharmagent_db
         run: alembic upgrade head
 
-      - name: Run repository tests against real Postgres
+      - name: Ejecutar tests de repositorio contra un Postgres real
         env:
           DATABASE_URL: postgresql+asyncpg://pharmagent:pharmagent_pass@localhost:5432/pharmagent_db
         run: pytest -m postgres tests/integration/test_drug_repository_postgres.py tests/integration/test_prescription_record_repository_postgres.py
 
-      - name: Verify downgrade round-trip
+      - name: Verificar el roundtrip de downgrade
         env:
           DATABASE_URL: postgresql+asyncpg://pharmagent:pharmagent_pass@localhost:5432/pharmagent_db
         run: |

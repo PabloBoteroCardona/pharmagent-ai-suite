@@ -8,32 +8,32 @@
 # suite completa (`pytest`) antes de hacer commit — el lockfile solo es de fiar si se
 # verificó contra las versiones exactas que fija, no contra los rangos de este archivo.
 
-# --- Web framework ---
+# --- Framework web ---
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.32,<1.0
 python-multipart>=0.0.12,<1.0
 slowapi>=0.1.9,<1.0
 
-# --- Data validation ---
+# --- Validación de datos ---
 pydantic>=2.9,<3.0
 
-# --- Persistence ---
+# --- Persistencia ---
 sqlalchemy>=2.0,<3.0
 asyncpg>=0.30,<1.0
 alembic>=1.13,<2.0
 pgvector>=0.3,<1.0
 
-# --- LLM / Agents (Google GenAI SDK) ---
+# --- LLM / Agentes (SDK de Google GenAI) ---
 google-genai>=0.7,<1.0
 
-# --- HTTP client (external APIs, e.g. CIMA/AEMPS) ---
+# --- Cliente HTTP (APIs externas, p. ej. CIMA/AEMPS) ---
 httpx>=0.27,<1.0
 
 # --- Resiliencia y observabilidad de los clientes externos (CIMA, Groq, Ollama, Gemini) ---
 tenacity>=9.0,<10.0
 python-json-logger>=3.0,<5.0
 
-# --- Testing & quality ---
+# --- Tests y calidad ---
 # `pytest` fijado por debajo de PYSEC-2026-1845 (corregida en 9.0.3): `pytest-asyncio`
 # (hasta su última versión publicada, 0.26.0) exige `pytest<9` — no hay combinación
 # instalable que traiga la versión corregida todavía. Riesgo real limitado: `pytest` nunca
@@ -45,12 +45,12 @@ pytest-cov>=6.0,<7.0
 ruff>=0.7,<1.0
 pre-commit>=4.0,<5.0
 
-# --- Observability ---
+# --- Observabilidad ---
 sentry-sdk>=2.17,<3.0
 
-# --- Configuration ---
+# --- Configuración ---
 python-dotenv>=1.0,<2.0
 pydantic-settings>=2.6,<3.0
 
-# --- Evaluation (evaluation/run_evaluation.py) ---
+# --- Evaluación (evaluation/run_evaluation.py) ---
 pillow>=12.3,<13.0

@@ -70,7 +70,7 @@ silenciosa (ej. `groq_client.py:107`, `logger.warning("groq_generate_completion_
 El fallo ahora deja rastro consultable en el proveedor de despliegue, sin cambiar el
 comportamiento de degradación que ya se decidió mantener.
 
-**Veredicto**: 🟢 remediado y verificado.
+**Veredicto**: remediado y verificado.
 
 ### 2.2. Arquitectura y seguridad (P0/P1)
 
@@ -109,7 +109,7 @@ versión exacta). Cierra la asimetría con `frontend/package-lock.json`.
   propósito, porque su objetivo es detectar CVEs publicadas después del último cambio de
   código, no revisar el código en sí.
 
-**Veredicto**: 🟢 remediado y verificado (con una nota menor documentada arriba, no un hallazgo
+**Veredicto**: remediado y verificado (con una nota menor documentada arriba, no un hallazgo
 nuevo).
 
 ### 2.3. P2 — verificado también, aunque no era obligatorio en este barrido
@@ -131,7 +131,7 @@ nuevo).
   auditoría inicial (latencia/tasa de error de LLM por proveedor sigue sin medirse; queda como
   mejora futura no bloqueante).
 
-**Veredicto**: 🟢 remediado y verificado.
+**Veredicto**: remediado y verificado.
 
 ### 2.4. Suite de calidad — ejecutada en el momento de esta verificación
 
@@ -162,15 +162,15 @@ lint y formato limpios.
 
 | Bloque | Estado |
 |---|---|
-| P0 — Resiliencia (reintentos) | 🟢 |
-| P0 — Observabilidad (logging) | 🟢 |
-| P0 — RGPD (demo mode en backend) | 🟢 |
-| P1 — DIP (`DrugModel` fuera de runtime) | 🟢 |
-| P1 — Lockfile de backend | 🟢 |
-| P1 — Auditoría de dependencias en CI | 🟢 |
-| P2 — Cobertura de repositorios | 🟢 |
-| P2 — Endurecimiento de Docker | 🟢 |
-| P2 — Métricas básicas | 🟢 |
+| P0 — Resiliencia (reintentos) | Resuelto |
+| P0 — Observabilidad (logging) | Resuelto |
+| P0 — RGPD (demo mode en backend) | Resuelto |
+| P1 — DIP (`DrugModel` fuera de runtime) | Resuelto |
+| P1 — Lockfile de backend | Resuelto |
+| P1 — Auditoría de dependencias en CI | Resuelto |
+| P2 — Cobertura de repositorios | Resuelto |
+| P2 — Endurecimiento de Docker | Resuelto |
+| P2 — Métricas básicas | Resuelto |
 
 Los 9 hallazgos de la auditoría inicial están remediados y verificados de forma independiente
 contra código y tests reales, no solo contra el informe de cierre de la remediación.

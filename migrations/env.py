@@ -19,12 +19,11 @@ from src.infrastructure.models import (  # noqa: F401
     PrescriptionRecordModel,
 )
 
-# this is the Alembic Config object, which provides
-# access to the values within the .ini file in use.
+# Este es el objeto Config de Alembic, que da acceso a los valores del archivo .ini en uso.
 config = context.config
 
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
+# Interpreta el archivo de configuración para el logging de Python.
+# Esta línea configura los loggers.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
@@ -36,23 +35,19 @@ config.set_main_option("sqlalchemy.url", settings.database_url)
 # `Base.metadata` (poblada al importar los modelos ORM arriba) habilita `--autogenerate`.
 target_metadata = Base.metadata
 
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
+# Otros valores de la configuración, según las necesidades de env.py, pueden obtenerse así:
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
 
 
 def run_migrations_offline() -> None:
-    """Run migrations in 'offline' mode.
+    """Ejecuta las migraciones en modo 'offline'.
 
-    This configures the context with just a URL
-    and not an Engine, though an Engine is acceptable
-    here as well.  By skipping the Engine creation
-    we don't even need a DBAPI to be available.
+    Configura el contexto solo con una URL, no con un Engine (aunque un Engine también
+    sería válido aquí). Al omitir la creación del Engine, ni siquiera hace falta que haya
+    una DBAPI disponible.
 
-    Calls to context.execute() here emit the given string to the
-    script output.
-
+    Las llamadas a context.execute() aquí emiten la cadena dada a la salida del script.
     """
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
@@ -74,10 +69,7 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    """In this scenario we need to create an Engine
-    and associate a connection with the context.
-
-    """
+    """En este escenario hace falta crear un Engine y asociar una conexión al contexto."""
 
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
@@ -92,7 +84,7 @@ async def run_async_migrations() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode."""
+    """Ejecuta las migraciones en modo 'online'."""
 
     asyncio.run(run_async_migrations())
 

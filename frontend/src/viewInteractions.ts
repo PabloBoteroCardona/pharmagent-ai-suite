@@ -40,7 +40,12 @@ export function initInteractionsView(): void {
   addForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const value = drugInput.value.trim();
-    if (!value) return;
+    if (!value) {
+      // Campo vacío + Enter: con 2+ fármacos ya añadidos, tratarlo como el atajo de
+      // teclado de "Verificar interacciones" en vez de no hacer nada.
+      if (!checkButton.disabled) checkButton.click();
+      return;
+    }
     drugs.push(value);
     drugInput.value = "";
     drugSuggestions.clear();

@@ -184,6 +184,15 @@ export function initPrescriptionView(): void {
 
   consentCheckbox.addEventListener("change", updateSubmitState);
 
+  // A diferencia de un campo de texto, una casilla enfocada no dispara el envío del
+  // formulario al pulsar Enter de forma nativa — se replica aquí explícitamente.
+  consentCheckbox.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !submitButton.disabled) {
+      event.preventDefault();
+      form.requestSubmit();
+    }
+  });
+
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     const file = fileInput.files?.[0];

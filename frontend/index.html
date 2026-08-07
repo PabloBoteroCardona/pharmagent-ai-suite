@@ -10,7 +10,7 @@
     />
     <link
       rel="icon"
-      href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><rect x=%229%22 y=%221.5%22 width=%226%22 height=%223.5%22 rx=%221%22 fill=%22%230D9488%22/><rect x=%225.5%22 y=%225%22 width=%2213%22 height=%2217.5%22 rx=%223.5%22 fill=%22%230284C7%22/><rect x=%228%22 y=%2211%22 width=%228%22 height=%226%22 rx=%221.2%22 fill=%22white%22/><path d=%22M12 12.2v3.6M10.2 14h3.6%22 stroke=%22%230284C7%22 stroke-width=%221.3%22 stroke-linecap=%22round%22/></svg>"
+      href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><rect x=%229%22 y=%221.5%22 width=%226%22 height=%223.5%22 rx=%221%22 fill=%22%230D9488%22/><rect x=%225.5%22 y=%225%22 width=%2213%22 height=%2217.5%22 rx=%223.5%22 fill=%22%230284C7%22/><rect x=%228%22 y=%2211%22 width=%228%22 height=%226%22 rx=%221.2%22 fill=%22%23059669%22 stroke=%22%23FACC15%22 stroke-width=%221.5%22/><path d=%22M12 12.2v3.6M10.2 14h3.6%22 stroke=%22white%22 stroke-width=%221.3%22 stroke-linecap=%22round%22/></svg>"
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -20,6 +20,11 @@
     />
   </head>
   <body class="flex min-h-screen flex-col bg-slate-50 text-slate-900 antialiased">
+      <!-- Cabecera -->
+      <header class="border-b border-sky-800 bg-sky-900 text-sky-100">
+        <div class="mx-auto flex max-w-5xl items-center gap-2 px-4 py-4 md:px-10 lg:px-16"></div>
+      </header>
+
       <!-- Contenido principal -->
       <main class="flex-1 px-4 pb-8 pt-14 md:px-10 md:pb-10 md:pt-20 lg:px-16">
         <div class="mx-auto max-w-5xl">
@@ -28,10 +33,19 @@
               <svg viewBox="0 0 24 24" class="h-10 w-10 shrink-0 md:h-12 md:w-12" aria-hidden="true">
                 <rect x="9" y="1.5" width="6" height="3.5" rx="1" fill="#0D9488" />
                 <rect x="5.5" y="5" width="13" height="17.5" rx="3.5" fill="#0284C7" />
-                <rect x="8" y="11" width="8" height="6" rx="1.2" fill="white" />
+                <rect
+                  x="8"
+                  y="11"
+                  width="8"
+                  height="6"
+                  rx="1.2"
+                  fill="#059669"
+                  stroke="#FACC15"
+                  stroke-width="1.5"
+                />
                 <path
                   d="M12 12.2v3.6M10.2 14h3.6"
-                  stroke="#0284C7"
+                  stroke="white"
                   stroke-width="1.3"
                   stroke-linecap="round"
                 />
@@ -49,13 +63,13 @@
             aria-label="Secciones"
           >
             <button data-tab="consult" class="tab-button" role="tab" aria-selected="true">
-              💬 Consulta Clínica
+              Consulta Clínica
             </button>
             <button data-tab="interactions" class="tab-button" role="tab" aria-selected="false">
-              🛡️ Interacciones
+              Interacciones
             </button>
             <button data-tab="prescription" class="tab-button" role="tab" aria-selected="false">
-              📋 Receta
+              Receta
             </button>
           </nav>
 
@@ -66,7 +80,7 @@
               class="space-y-3 rounded-2xl border border-sky-800 bg-sky-900 p-4 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] md:p-6"
             >
               <div>
-                <label for="consult-drug-name" class="text-xs font-semibold text-sky-200">
+                <label for="consult-drug-name" class="pl-1 text-xs font-semibold text-sky-200">
                   Nombre del fármaco (recomendado: sin él, la búsqueda puede no encontrar el medicamento correcto)
                 </label>
                 <input
@@ -79,11 +93,11 @@
                 />
                 <datalist id="consult-drug-suggestions"></datalist>
               </div>
-              <div class="flex items-end gap-2">
-                <div class="flex-1">
-                  <label for="consult-query" class="text-xs font-semibold text-sky-200">
-                    Tu consulta clínica
-                  </label>
+              <div>
+                <label for="consult-query" class="pl-1 text-xs font-semibold text-sky-200">
+                  Tu consulta clínica
+                </label>
+                <div class="mt-1 flex items-center gap-2">
                   <input
                     id="consult-query"
                     type="text"
@@ -91,26 +105,26 @@
                     autocomplete="off"
                     spellcheck="true"
                     placeholder="¿Qué dosis de Ibuprofeno es adecuada para un adulto?"
-                    class="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                    class="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
                   />
-                  <p class="mt-1 text-[11px] text-sky-300">
-                    No incluyas datos personales (nombre, DNI) en tu pregunta.
-                  </p>
+                  <button
+                    type="submit"
+                    class="shrink-0 rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-500"
+                  >
+                    Preguntar
+                  </button>
                 </div>
-                <button
-                  type="submit"
-                  class="shrink-0 rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-500"
-                >
-                  Preguntar
-                </button>
+                <p class="mt-2 pl-2 text-[11px] text-sky-200">
+                  No incluyas datos personales (nombre, DNI) en tu pregunta.
+                </p>
               </div>
             </form>
 
-            <div class="flex justify-end">
+            <div class="flex justify-end pr-1 md:pr-2">
               <button
                 id="consult-clear"
                 type="button"
-                class="text-xs font-semibold text-slate-500 transition hover:text-critical-700"
+                class="rounded-lg border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:border-critical-200 hover:bg-critical-50 hover:text-critical-700"
               >
                 🗑️ Limpiar consultas
               </button>
@@ -125,13 +139,16 @@
               class="space-y-3 rounded-2xl border border-sky-800 bg-sky-900 p-4 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] md:p-6"
             >
               <div>
-                <div class="flex gap-2">
+                <label for="interactions-drug-input" class="pl-1 text-xs font-semibold text-sky-200">
+                  Nombre del fármaco
+                </label>
+                <div class="mt-1 flex gap-2">
                   <input
                     id="interactions-drug-input"
                     type="text"
                     autocomplete="off"
                     list="interactions-drug-suggestions"
-                    placeholder="Nombre del fármaco"
+                    placeholder="Ej. Ibuprofeno"
                     class="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
                   />
                   <datalist id="interactions-drug-suggestions"></datalist>
@@ -142,7 +159,7 @@
                     ➕ Añadir
                   </button>
                 </div>
-                <p class="mt-1 text-[11px] text-sky-300">
+                <p class="mt-1 pl-2 text-[12px] text-sky-200">
                   Añade solo nombres de fármaco, sin datos personales.
                 </p>
               </div>
@@ -159,11 +176,11 @@
               </button>
             </form>
 
-            <div class="flex justify-end">
+            <div class="flex justify-end pr-1 md:pr-2">
               <button
                 id="interactions-clear"
                 type="button"
-                class="text-xs font-semibold text-slate-500 transition hover:text-critical-700"
+                class="rounded-lg border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:border-critical-200 hover:bg-critical-50 hover:text-critical-700"
               >
                 🗑️ Limpiar
               </button>
@@ -179,7 +196,9 @@
             >
               <div id="prescription-upload-section" class="space-y-3">
                 <div>
-                  <p class="text-center text-xs font-semibold text-sky-200">Foto de la receta</p>
+                  <p class="pl-1 text-xs font-semibold text-sky-200">
+                    Foto de la receta
+                  </p>
                   <label
                     for="prescription-file"
                     class="mt-1 flex cursor-pointer flex-row flex-wrap items-center justify-center gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-center transition hover:border-sky-400 hover:bg-sky-50"
@@ -269,11 +288,11 @@
               </div>
             </form>
 
-            <div class="flex justify-end">
+            <div class="flex justify-end pr-1 md:pr-2">
               <button
                 id="prescription-clear"
                 type="button"
-                class="text-xs font-semibold text-slate-500 transition hover:text-critical-700"
+                class="rounded-lg border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:border-critical-200 hover:bg-critical-50 hover:text-critical-700"
               >
                 🗑️ Limpiar
               </button>

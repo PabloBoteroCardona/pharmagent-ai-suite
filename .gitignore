@@ -21,18 +21,18 @@ wheels/
 *.egg
 MANIFEST
 
-# --- Virtual environments ---
+# --- Entornos virtuales ---
 .venv/
 venv/
 env/
 ENV/
 
-# --- Environment variables / secrets ---
+# --- Variables de entorno / secretos ---
 .env
 .env.*
 !.env.example
 
-# --- Testing / coverage ---
+# --- Tests / cobertura ---
 .pytest_cache/
 .coverage
 .coverage.*
@@ -43,7 +43,7 @@ coverage.xml
 *.cover
 nosetests.xml
 
-# --- Type checking / linting ---
+# --- Comprobación de tipos / lint ---
 .mypy_cache/
 .dmypy.json
 dmypy.json
@@ -52,21 +52,21 @@ dmypy.json
 # --- Jupyter ---
 .ipynb_checkpoints
 
-# --- Alembic / local databases ---
+# --- Alembic / bases de datos locales ---
 *.sqlite3
 *.db
 
-# --- Distribution / packaging ---
+# --- Distribución / empaquetado ---
 *.manifest
 *.spec
 
-# --- IDE / editors ---
+# --- IDE / editores ---
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# --- OS ---
+# --- Sistema operativo ---
 .DS_Store
 Thumbs.db
 
@@ -74,7 +74,7 @@ Thumbs.db
 *.log
 logs/
 
-# --- Sentry local artifacts ---
+# --- Artefactos locales de Sentry ---
 .sentryclirc
 
 # --- Evaluation artifacts (regenerados por evaluation/run_evaluation.py) ---

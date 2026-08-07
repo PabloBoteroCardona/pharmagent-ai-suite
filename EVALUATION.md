@@ -38,13 +38,13 @@ re-ejecutable bajo demanda.
 
 | Caso | Fármacos | Esperado | Obtenido | Fuente | Latencia |
 |---|---|---|---|---|---|
-| `curated-warfarina-aspirina` | Warfarina + Aspirina | `requiere_revision_medica` | ✅ igual | `curated` | 0.0s |
-| `curated-ibuprofeno-aspirina` | Ibuprofeno + Aspirina | `apto_con_precaucion` | ✅ igual | `curated` | 0.0s |
-| `curated-fluoxetina-tramadol` | Fluoxetina + Tramadol | `requiere_revision_medica` | ✅ igual | `curated` | 0.0s |
-| `llm-imao-isrs` | Fenelzina + Sertralina | `requiere_revision_medica` | ✅ igual | `llm` | 16.5s |
-| `llm-digoxina-amiodarona` | Digoxina + Amiodarona | `requiere_revision_medica` | ✅ igual | `llm` | 18.6s |
-| `llm-metformina-furosemida` | Metformina + Furosemida | `apto_con_precaucion` | ✅ igual | `llm` | 19.5s |
-| `llm-paracetamol-amoxicilina-no-interaction` | Paracetamol + Amoxicilina | `apto` | ✅ igual | — | 3.4s |
+| `curated-warfarina-aspirina` | Warfarina + Aspirina | `requiere_revision_medica` | igual | `curated` | 0.0s |
+| `curated-ibuprofeno-aspirina` | Ibuprofeno + Aspirina | `apto_con_precaucion` | igual | `curated` | 0.0s |
+| `curated-fluoxetina-tramadol` | Fluoxetina + Tramadol | `requiere_revision_medica` | igual | `curated` | 0.0s |
+| `llm-imao-isrs` | Fenelzina + Sertralina | `requiere_revision_medica` | igual | `llm` | 16.5s |
+| `llm-digoxina-amiodarona` | Digoxina + Amiodarona | `requiere_revision_medica` | igual | `llm` | 18.6s |
+| `llm-metformina-furosemida` | Metformina + Furosemida | `apto_con_precaucion` | igual | `llm` | 19.5s |
+| `llm-paracetamol-amoxicilina-no-interaction` | Paracetamol + Amoxicilina | `apto` | igual | — | 3.4s |
 
 Los 3 casos cubiertos por la base curada responden en ~0s (sin llamada a Ollama, tal como
 diseñado — ver "Diseño híbrido" en `safety_agent.py`). Los 4 casos que requieren

@@ -29,7 +29,7 @@ escaneo o PDF) mediante comprensión multimodal.
 
 | Campo | Valor |
 |---|---|
-| **Modelo** | `gemini-flash-latest` (multimodal, vía `google-genai`) — implementado ✅. Originalmente `gemini-1.5-pro` (BLOQUE B); **Google retiró ese modelo** (devuelve `404 NOT_FOUND` para claves nuevas) — descubierto y corregido durante la evaluación cuantitativa de [BLOQUE D], ver [EVALUATION.md](EVALUATION.md) |
+| **Modelo** | `gemini-flash-latest` (multimodal, vía `google-genai`) — implementado. Originalmente `gemini-1.5-pro` (BLOQUE B); **Google retiró ese modelo** (devuelve `404 NOT_FOUND` para claves nuevas) — descubierto y corregido durante la evaluación cuantitativa de [BLOQUE D], ver [EVALUATION.md](EVALUATION.md) |
 | **Tipo de invocación** | Llamada directa a `client.aio.models.generate_content()` con `Part.from_bytes` (imagen) + prompt de sistema; `response_mime_type="application/json"` fuerza salida estructurada. Sin capa ADK/tool-calling. |
 | **Ubicación real** | [`src/application/agents/prescription_agent.py`](src/application/agents/prescription_agent.py) (orquestador) + [`src/infrastructure/external/gemini_client.py`](src/infrastructure/external/gemini_client.py) (`GeminiClient`, cliente concreto) |
 | **Puerto de dominio** | [`PrescriptionVisionPort`](src/domain/ports/drug_ports.py) (`typing.Protocol`) — `GeminiClient` lo satisface estructuralmente |
@@ -112,7 +112,7 @@ seguridad a partir de la lista de fármacos ya extraída.
   o introducidos manualmente) y normalizarlos (minúsculas, recorte de espacios) para
   comparación por subcadena contra la base curada.
 - **Paso 1 — base curada (autoritativa)**: evaluar cada par conocido de
-  `_KNOWN_INTERACTIONS` (6 interacciones clínicamente documentadas) y, si alguna aplica,
+  `_KNOWN_INTERACTIONS` (20 interacciones clínicamente documentadas) y, si alguna aplica,
   devolverla tal cual (`source: "curated"`) — **nunca** se consulta al LLM en este caso,
   para no arriesgar que un modelo contradiga una interacción ya verificada.
 - **Paso 2 — razonamiento LLM (complementario)**: si ningún par de la base curada aplica y
@@ -132,7 +132,7 @@ metodología, latencias y un hallazgo relevante: un timeout de Ollama en una eje
 produjo un "acierto" por coincidencia con el veredicto por defecto, no por razonamiento
 real — documentado explícitamente para no sobre-representar la fiabilidad del camino LLM.
 
-**Limitación aceptada**: la base curada es mínima y demostrativa (fines de TFM, 6 pares), no
+**Limitación aceptada**: la base curada es mínima y demostrativa (fines de TFM, 20 pares), no
 una base de datos de interacciones clínica completa. El razonamiento LLM complementario no
 está *grounded* en ninguna base de datos verificada — es conocimiento paramétrico del
 modelo, con las mismas limitaciones de fiabilidad que cualquier LLM sin RAG. El *fallback* a

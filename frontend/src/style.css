@@ -53,6 +53,30 @@
   font-family: "Inter", "Segoe UI", sans-serif;
 }
 
+/*
+ * Cursor de marca: una cápsula de dos tonos (verde/amarillo), en vez del puntero por
+ * defecto del sistema. SVG inline como data URI (sin fichero aparte) — `#` debe ir como
+ * `%23` porque, sin escapar, el navegador lo lee como ancla de la URL, no como color. El
+ * offset `14 14` es el "hotspot" (punto exacto del clic dentro de la imagen de 28x28),
+ * aprox. el centro de la cápsula.
+ *
+ * Sobre inputs/textareas/botones se sustituye por la manita estándar del sistema
+ * (`pointer`) — más clara para indicar "aquí se escribe/se pulsa" que la cápsula
+ * decorativa, que es solo de marca para el resto de la página.
+ */
+body {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cg transform='rotate(-45 14 14)'%3E%3Crect x='3' y='10' width='22' height='8' rx='4' fill='%23FACC15' stroke='%23059669' stroke-width='2'/%3E%3Cpath d='M3 14a4 4 0 0 1 4-4h5v8H7a4 4 0 0 1-4-4Z' fill='%23059669'/%3E%3C/g%3E%3C/svg%3E")
+      14 14,
+    auto;
+}
+
+input,
+textarea,
+button {
+  cursor: pointer;
+}
+
 .font-mono,
 code,
 pre {

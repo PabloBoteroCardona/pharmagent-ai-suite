@@ -68,7 +68,7 @@ npm run dev                                     # servidor de desarrollo
   peticiones reales a servicios externos — no son parte de la suite automatizada, no correrlos
   en CI.
 
-## 🧠 Protocolo de Memoria (`.memory/`, local — no forma parte del repositorio publicado)
+## Protocolo de Memoria (`.memory/`, local — no forma parte del repositorio publicado)
 
 `.memory/` es un directorio de trabajo local (listado en `.gitignore`) que da continuidad
 entre sesiones de desarrollo asistido: no se sube al repositorio porque es un registro de
