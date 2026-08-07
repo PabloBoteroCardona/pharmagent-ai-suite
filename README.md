@@ -4,6 +4,11 @@ Trabajo de Fin de Máster (TFM) — sistema multiagente para el procesamiento de
 médicas, la verificación de interacciones farmacológicas y la consulta en lenguaje natural
 de fichas técnicas oficiales de medicamentos autorizados en España (AEMPS/CIMA).
 
+**Demo en vivo**: [pharmagent-ai.vercel.app](https://pharmagent-ai.vercel.app/) — pestaña
+Receta en modo demo (solo 3 ejemplos sintéticos, ver
+[ADR 002](docs/adr/002-datos-personales-foto-receta.md)); Consulta Clínica e Interacciones
+funcionan contra los servicios reales (CIMA en vivo, Groq).
+
 ## Índice
 
 - [Descripción y objetivos](#descripción-y-objetivos)
@@ -11,6 +16,7 @@ de fichas técnicas oficiales de medicamentos autorizados en España (AEMPS/CIMA
 - [Requisitos previos](#requisitos-previos)
 - [Instrucciones de despliegue en local](#instrucciones-de-despliegue-en-local)
 - [Despliegue con Docker Compose](#despliegue-con-docker-compose)
+- [Despliegue en producción](#despliegue-en-producción)
 - [Frontend (SPA)](#frontend-spa)
 - [Imágenes del proyecto](#imágenes-del-proyecto)
 - [Endpoints de la API](#endpoints-de-la-api)
@@ -62,11 +68,12 @@ el servicio, no quien sube la foto. Por eso la mitigación real, no solo declara
 distinta según el entorno:
 
 - **Despliegue público (`VITE_DEMO_MODE=true` + `DEMO_MODE=true`)**: la pestaña de Receta
-  **no acepta fotos de desconocidos en absoluto**. Solo permite elegir entre 3 imágenes de
-  ejemplo 100% sintéticas (`frontend/public/samples/`, generadas con
-  [evaluation/generate_synthetic_prescriptions.py](evaluation/generate_synthetic_prescriptions.py) —
-  texto renderizado sobre fondo blanco, sin ninguna receta ni paciente real). Elimina el
-  riesgo en vez de intentar gestionarlo. La restricción no depende solo del frontend: con
+  **no acepta fotos de desconocidos en absoluto**. Solo permite arrastrar (o tocar) una de 3
+  recetas de ejemplo 100% sintéticas ya presentes en la página (`frontend/public/samples/`,
+  con pacientes explícitamente ficticios para que sea evidente que no hay datos reales de
+  nadie) a una zona de destino con el mismo aspecto que la subida real — nunca hay un
+  selector de archivos del sistema de por medio. Elimina el riesgo en vez de intentar
+  gestionarlo. La restricción no depende solo del frontend: con
   `DEMO_MODE=true` el backend (`src/infrastructure/api/demo_mode.py`) rechaza con 403
   cualquier imagen subida a `/analyze-prescription`/`/process-prescription` cuyo hash SHA-256
   no coincida con uno de los 3 ejemplos, aunque se llame a la API directamente sin pasar por
@@ -267,6 +274,30 @@ explícitamente, sin el override:
 ```bash
 docker compose -f docker-compose.yml up -d
 ```
+
+## Despliegue en producción
+
+La demo en vivo enlazada al principio de este documento usa tres servicios independientes,
+pero el visitante solo ve uno (la URL de Vercel) — el backend y la base de datos nunca se
+exponen directamente:
+
+| Componente | Servicio | Notas |
+|---|---|---|
+| Frontend | [Vercel](https://vercel.com) | Estático (`frontend/`), sin build propio en el servidor — despliegue continuo desde `main`. |
+| Backend | [Google Cloud Run](https://cloud.google.com/run) | Reutiliza el [Dockerfile](Dockerfile) tal cual, sin configuración específica de la plataforma. Despliegue continuo desde `main` vía Cloud Build. Capa gratuita ("Always Free") permanente, más que suficiente para el tráfico de una demo. |
+| Base de datos | [Supabase](https://supabase.com) (Postgres + `pgvector`) | Elegido en vez del Postgres gratuito de Render/otros proveedores porque **no caduca** — necesario para que la demo siga viva después de la defensa del TFM. |
+
+El contenedor del backend es el mismo en local, en Docker Compose y en producción — el
+`CMD` del [Dockerfile](Dockerfile) aplica las migraciones y arranca Uvicorn en el puerto que
+la plataforma indique vía la variable `PORT` (Cloud Run/Render la inyectan; en local, sin
+definir, usa el 8000 de siempre), así que no hace falta ninguna configuración específica de
+plataforma más allá de las variables de entorno de siempre (ver
+[Seguridad en un despliegue público](#seguridad-en-un-despliegue-público)).
+
+Variables de entorno propias de este despliegue, además de las ya documentadas: `DEMO_MODE=true`
++ `VITE_DEMO_MODE=true` (modo demo activo en ambos lados, ver
+[ADR 002](docs/adr/002-datos-personales-foto-receta.md)) y `CORS_ALLOWED_ORIGINS` restringido
+al dominio real de Vercel (no `["*"]`).
 
 ## Frontend (SPA)
 
@@ -604,8 +635,9 @@ duplicada en `alembic.ini`.
 En resumen: los tres agentes, la orquestación end-to-end, la API REST completa (con CORS y
 persistencia auditable), la ingesta desde CIMA (por lotes y automática al consultar), las
 migraciones versionadas, la suite de tests con cobertura medida en ambos lados (backend y
-frontend) y el pipeline de CI de 3 jobs están implementados y verificados contra servicios
-reales — no solo contra dobles de test.
+frontend), el pipeline de CI de 3 jobs y el **despliegue en producción** (ver
+[Despliegue en producción](#despliegue-en-producción)) están implementados y verificados
+contra servicios reales — no solo contra dobles de test.
 
 Ver [docs/audit_report.md](docs/audit_report.md) para la auditoría técnica completa
 (arquitectura/DIP, seguridad/RGPD, resiliencia, observabilidad, CI/CD) con los 9 hallazgos

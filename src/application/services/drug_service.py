@@ -23,6 +23,7 @@ que no pasa por un puerto de dominio — ver docstring de `metrics.py`.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -31,6 +32,22 @@ from src.infrastructure.metrics import record_cima_search_outcome
 
 if TYPE_CHECKING:
     from src.infrastructure.models import DrugModel
+
+# `PrescriptionAgent` (Gemini) a veces concatena la dosis al nombre del fármaco pese a que
+# el *system prompt* le pide separarlos (p. ej. "ATORVASTATINA 20 mg" en vez de
+# "Atorvastatina") — CIMA no reconoce esa cadena como nombre de fármaco válido y la
+# búsqueda en vivo falla en silencio (cae a `source: "none"`). Se recorta aquí, en el punto
+# de entrada compartido por `/search` y `/consult`, en vez de confiar en que el LLM siga
+# siempre el formato pedido — defensivo, no solo mejor *prompting*.
+_TRAILING_DOSE_PATTERN = re.compile(
+    r"\s+\d+([.,]\d+)?\s*(mg|mcg|g|ml|%|ui|comprimidos?|cápsulas?)\.?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _strip_trailing_dose(query: str) -> str:
+    return _TRAILING_DOSE_PATTERN.sub("", query).strip()
+
 
 # Al caer al respaldo de CIMA en vivo (caché sin resultados), se indexan como máximo
 # estos fármacos aunque `limit` sea mayor — cada uno implica 3 llamadas HTTP a CIMA
@@ -124,6 +141,7 @@ class DrugService:
     ) -> DrugSearchResult:
         """Busca fármacos relevantes para `query`: primero en la caché vectorial y, si no
         hay resultados, en vivo en CIMA (ver docstring del módulo)."""
+        query = _strip_trailing_dose(query)
         embedding = await self._ollama_client.generate_embedding(query)
         cached = (
             await self._drug_repo.search_similar_by_vector(embedding, limit=limit)

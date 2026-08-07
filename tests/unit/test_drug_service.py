@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.application.services.drug_service import DrugService
+from src.application.services.drug_service import DrugService, _strip_trailing_dose
 from src.domain.ports import CimaDataSourcePort, DrugRepositoryPort, LanguageModelPort
 
 
@@ -42,6 +42,37 @@ class TestSearchDrugsSemanticCacheHit:
         cima_client.search_medicamentos.assert_not_called()
 
 
+class TestStripTrailingDose:
+    """`PrescriptionAgent` (Gemini) a veces concatena la dosis al nombre del fármaco pese al
+    *system prompt* (p. ej. `"ATORVASTATINA 20 mg"` en vez de `"Atorvastatina"`) — CIMA no
+    reconoce esa cadena como nombre de fármaco válido. Ver docstring de `drug_service.py`."""
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("ATORVASTATINA 20 mg", "ATORVASTATINA"),
+            ("Lansoprazol 30 mg", "Lansoprazol"),
+            ("Ibuprofeno 600 mg.", "Ibuprofeno"),
+            ("Metformina 850mg", "Metformina"),
+            ("Amoxicilina 1 comprimido", "Amoxicilina"),
+            ("Insulina 10 ui", "Insulina"),
+        ],
+    )
+    def test_strips_trailing_dose_suffix(self, raw: str, expected: str) -> None:
+        assert _strip_trailing_dose(raw) == expected
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "Ibuprofeno",
+            "¿qué dosis de Ibuprofeno es adecuada para un adulto?",
+            "Omeprazol",
+        ],
+    )
+    def test_leaves_queries_without_a_trailing_dose_unchanged(self, query: str) -> None:
+        assert _strip_trailing_dose(query) == query
+
+
 class TestSearchDrugsSemanticLiveFallback:
     @pytest.mark.asyncio
     async def test_falls_back_to_cima_when_cache_is_empty(self) -> None:
@@ -74,6 +105,29 @@ class TestSearchDrugsSemanticLiveFallback:
         assert result.drugs == ["indexed-drug"]
         cima_client.search_medicamentos.assert_awaited_once_with("paracetamol")
         drug_repo.save_drug.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_strips_trailing_dose_before_searching(self) -> None:
+        """Reproduce el bug real: `PrescriptionAgent` extrae `"ATORVASTATINA 20 mg"` como
+        `farmaco`, y sin normalizar, ni la caché (embedding) ni CIMA en vivo lo reconocen."""
+        ollama_client = AsyncMock(spec=LanguageModelPort)
+        ollama_client.generate_embedding.return_value = [0.1, 0.2]
+        drug_repo = AsyncMock(spec=DrugRepositoryPort)
+        drug_repo.search_similar_by_vector.return_value = []
+        drug_repo.get_by_nregistro.return_value = None
+        drug_repo.save_drug.return_value = "indexed-drug"
+
+        cima_client = AsyncMock(spec=CimaDataSourcePort)
+        cima_client.search_medicamentos.return_value = []
+
+        service = _make_service(
+            cima_client=cima_client, ollama_client=ollama_client, drug_repo=drug_repo
+        )
+
+        await service.search_drugs_semantic("ATORVASTATINA 20 mg")
+
+        ollama_client.generate_embedding.assert_awaited_once_with("ATORVASTATINA")
+        cima_client.search_medicamentos.assert_awaited_once_with("ATORVASTATINA")
 
     @pytest.mark.asyncio
     async def test_returns_none_source_when_cima_also_finds_nothing(self) -> None:

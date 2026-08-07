@@ -40,12 +40,18 @@ Diferenciar el comportamiento según el entorno, activado por la variable de ent
 ### 1. Despliegue público (`VITE_DEMO_MODE=true`)
 
 La pestaña "Receta" **no acepta ninguna foto subida por el visitante**. En su lugar ofrece 3
-imágenes de ejemplo 100% sintéticas — generadas con el script ya existente
-[evaluation/generate_synthetic_prescriptions.py](../../evaluation/generate_synthetic_prescriptions.py)
-(texto renderizado sobre fondo blanco, sin ninguna receta ni paciente real) — copiadas a
-`frontend/public/samples/`. Los tres casos cubren 1, 2 y 3 fármacos, incluyendo uno con una
-interacción `SEVERE` real (warfarina + aspirina) para que la demo sea representativa del
-flujo completo (extracción + auditoría de interacciones + ficha CIMA).
+imágenes de ejemplo 100% sintéticas en `frontend/public/samples/` — recetas de diseño
+(no fotografías reales) con pacientes explícitamente ficticios (universo Harry Potter:
+Harry Potter, Ron Weasley, Hermione Granger) para que sea evidente a simple vista que no
+hay ningún dato real de nadie, cada una con un único fármaco (Loratadina, Atorvastatina,
+Lansoprazol). El visitante no elige un archivo del sistema: arrastra (o toca) una de las 3
+miniaturas ya presentes en la página a una zona de destino con el mismo aspecto que la
+subida real (mismo aviso, misma casilla de confirmación) — refuerza que el resto de la
+interfaz es idéntica a la de desarrollo local, sin sacrificar la restricción de origen.
+Como los tres ejemplos tienen un único fármaco, este flujo concreto no dispara la
+verificación automática de interacciones (`ProcessPrescriptionUseCase` la omite con <2
+fármacos) — esa parte de la funcionalidad se demuestra en la pestaña Interacciones, que sí
+usa datos reales de la base curada.
 
 Esto **elimina el riesgo en origen** en vez de intentar gestionarlo con avisos: no puede
 llegar a Google ninguna imagen real de nadie, porque no se acepta ninguna.

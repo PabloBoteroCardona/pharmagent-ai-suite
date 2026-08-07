@@ -115,35 +115,122 @@ async function attachCimaCard(drug: ExtractedDrugItem, resultsRoot: HTMLElement)
   }
 }
 
-function initDemoMode(results: HTMLDivElement): void {
+/** Modo demo: mismo aspecto que la subida real (zona de arrastrar, aviso RGPD, casilla de
+ * confirmación) para que se note el trabajo hecho en esa pantalla, pero sin selector de
+ * archivos del sistema operativo — solo se puede "soltar" una de las 3 miniaturas de
+ * ejemplo ya presentes en la página, nunca un archivo arbitrario del visitante (ver ADR
+ * 002: el backend además rechaza con 403 cualquier imagen que no sea una de esas 3, pero
+ * la restricción real es que aquí nunca se ofrece la posibilidad de elegir otra). */
+// GIF transparente de 1x1 — pasado a `setDragImage` para suprimir el "fantasma" que el
+// navegador genera automáticamente (una captura del propio botón) al arrastrar; sin esto,
+// ese fantasma nativo sigue apareciendo junto al cursor pese a mostrar también la vista
+// grande centrada.
+const TRANSPARENT_PIXEL = new Image();
+TRANSPARENT_PIXEL.src =
+  "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBTAA7";
+
+function initDemoMode(results: HTMLDivElement, clearButton: HTMLButtonElement): void {
   const uploadSection = document.getElementById("prescription-upload-section") as HTMLDivElement;
   const demoSection = document.getElementById("prescription-demo-section") as HTMLDivElement;
+  const dropzone = document.getElementById("prescription-demo-dropzone") as HTMLDivElement;
+  const filenameLabel = document.getElementById("prescription-demo-filename") as HTMLSpanElement;
+  const preview = document.getElementById("prescription-demo-preview") as HTMLImageElement;
+  const consentCheckbox = document.getElementById("prescription-demo-consent") as HTMLInputElement;
+  const submitButton = document.getElementById("prescription-demo-submit") as HTMLButtonElement;
   const demoStatus = document.getElementById("prescription-demo-status") as HTMLParagraphElement;
+  const dragPreview = document.getElementById("prescription-demo-drag-preview") as HTMLDivElement;
+  const dragPreviewImg = document.getElementById("prescription-demo-drag-preview-img") as HTMLImageElement;
+  const demoDisclaimer = document.getElementById("prescription-demo-disclaimer") as HTMLParagraphElement;
   uploadSection.classList.add("hidden");
   demoSection.classList.remove("hidden");
+  demoDisclaimer.classList.remove("hidden");
 
   const sampleButtons = demoSection.querySelectorAll<HTMLButtonElement>("[data-sample]");
-  sampleButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      const url = button.dataset.sample as string;
-      const filename = url.split("/").pop() as string;
+  let selectedFile: File | null = null;
 
-      void (async () => {
-        sampleButtons.forEach((b) => (b.disabled = true));
-        demoStatus.textContent = "Cargando imagen de ejemplo…";
-        try {
-          const response = await fetch(url);
-          const blob = await response.blob();
-          const file = new File([blob], filename, { type: blob.type });
-          demoStatus.textContent = "";
-          await runProcessPrescription(file, results);
-        } catch {
-          demoStatus.textContent = "No se pudo cargar la imagen de ejemplo.";
-        } finally {
-          sampleButtons.forEach((b) => (b.disabled = false));
-        }
-      })();
+  function updateSubmitState(): void {
+    submitButton.disabled = !selectedFile || !consentCheckbox.checked;
+  }
+
+  async function selectSample(url: string): Promise<void> {
+    const filename = url.split("/").pop() as string;
+    sampleButtons.forEach((b) => (b.disabled = true));
+    demoStatus.textContent = "Cargando imagen de ejemplo…";
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      selectedFile = new File([blob], filename, { type: blob.type });
+      filenameLabel.textContent = filename;
+      preview.src = URL.createObjectURL(selectedFile);
+      preview.classList.remove("hidden");
+      demoStatus.textContent = "";
+    } catch {
+      selectedFile = null;
+      demoStatus.textContent = "No se pudo cargar la imagen de ejemplo.";
+    } finally {
+      sampleButtons.forEach((b) => (b.disabled = false));
+      updateSubmitState();
+    }
+  }
+
+  sampleButtons.forEach((button) => {
+    const url = button.dataset.sample as string;
+
+    // Clic como alternativa a arrastrar (imprescindible en móvil, donde el drag-and-drop
+    // de HTML5 no funciona de forma fiable).
+    button.addEventListener("click", () => {
+      void selectSample(url);
     });
+
+    button.addEventListener("dragstart", (event) => {
+      event.dataTransfer?.setData("text/plain", url);
+      // Suprime el fantasma nativo del navegador (una captura del botón que, si no se
+      // sustituye, sigue apareciendo junto al cursor) y muestra en su lugar una copia
+      // grande y fija en el centro de la pantalla — la miniatura de 64px es difícil de leer.
+      event.dataTransfer?.setDragImage(TRANSPARENT_PIXEL, 0, 0);
+      dragPreviewImg.src = url;
+      dragPreview.classList.remove("hidden");
+      dragPreview.classList.add("flex");
+    });
+
+    button.addEventListener("dragend", () => {
+      dragPreview.classList.add("hidden");
+      dragPreview.classList.remove("flex");
+    });
+  });
+
+  dropzone.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    dropzone.classList.add("border-sky-400", "bg-sky-50");
+  });
+
+  dropzone.addEventListener("dragleave", () => {
+    dropzone.classList.remove("border-sky-400", "bg-sky-50");
+  });
+
+  dropzone.addEventListener("drop", (event) => {
+    event.preventDefault();
+    dropzone.classList.remove("border-sky-400", "bg-sky-50");
+    const url = event.dataTransfer?.getData("text/plain");
+    if (url) void selectSample(url);
+  });
+
+  consentCheckbox.addEventListener("change", updateSubmitState);
+
+  submitButton.addEventListener("click", () => {
+    if (!selectedFile) return;
+    void runProcessPrescription(selectedFile, results);
+  });
+
+  clearButton.addEventListener("click", () => {
+    selectedFile = null;
+    filenameLabel.textContent = "Ninguna receta seleccionada";
+    preview.classList.add("hidden");
+    preview.src = "";
+    consentCheckbox.checked = false;
+    demoStatus.textContent = "";
+    updateSubmitState();
+    results.innerHTML = "";
   });
 }
 
@@ -158,10 +245,7 @@ export function initPrescriptionView(): void {
   const results = document.getElementById("prescription-results") as HTMLDivElement;
 
   if (isDemoMode()) {
-    initDemoMode(results);
-    clearButton.addEventListener("click", () => {
-      results.innerHTML = "";
-    });
+    initDemoMode(results, clearButton);
     return;
   }
 

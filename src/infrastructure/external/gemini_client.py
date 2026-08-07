@@ -40,6 +40,10 @@ SYSTEM_PROMPT = (
     "advertencia relevante (alergias señaladas, condiciones especiales, indicaciones del "
     "prescriptor). Nunca inventes un fármaco, dosis o dato que no sea legible con certeza en "
     "la imagen; si un campo no es legible, devuélvelo como null. "
+    "IMPORTANTE — separación de campos: el campo `farmaco` debe contener ÚNICAMENTE el "
+    'nombre del fármaco o principio activo (p. ej. "Atorvastatina"), nunca la dosis ni la '
+    'concentración — eso va exclusivamente en `dosificacion` (p. ej. "20 mg"). No '
+    "concatenes nombre y dosis en el mismo campo. "
     "IMPORTANTE — protección de datos: no incluyas en ningún campo de la respuesta (ni "
     "siquiera en advertencias) el nombre del paciente, DNI/NIE, dirección, número de la "
     "seguridad social, ni ningún otro dato que identifique a una persona concreta, aunque "
