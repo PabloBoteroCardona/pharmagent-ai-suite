@@ -87,3 +87,6 @@ evaluation/synthetic_prescriptions/
 # --- Memoria de trabajo local entre sesiones de desarrollo asistido (no es documentación
 # pública del producto — ver la nota en CLAUDE.md) ---
 .memory/
+
+# --- Presentación----
+PRESENTACION_TFM.md

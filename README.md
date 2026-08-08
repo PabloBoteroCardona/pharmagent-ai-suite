@@ -11,6 +11,7 @@ funcionan contra los servicios reales (CIMA en vivo, Groq).
 
 ## Índice
 
+- [Entrega del TFM](#entrega-del-tfm)
 - [Descripción y objetivos](#descripción-y-objetivos)
 - [Stack tecnológico y arquitectura](#stack-tecnológico-y-arquitectura)
 - [Requisitos previos](#requisitos-previos)
@@ -25,6 +26,19 @@ funcionan contra los servicios reales (CIMA en vivo, Groq).
 - [Evaluación cuantitativa](#evaluación-cuantitativa)
 - [Migraciones de base de datos](#migraciones-de-base-de-datos)
 - [Estado del proyecto](#estado-del-proyecto)
+
+## Entrega del TFM
+
+Recursos exigidos por la entrega del TFM (BIG School, Máster de Desarrollo con IA),
+recopilados aquí para que sean fáciles de encontrar por quien evalúe el proyecto.
+
+| Recurso | Ubicación |
+|---|---|
+| Documentación técnica completa | Este `README.md`, más [AGENTS.md](AGENTS.md), [SKILLS.md](SKILLS.md), [EVALUATION.md](EVALUATION.md) y [docs/adr/](docs/adr/) |
+| Demo en producción (enlace directo) | [pharmagent-ai.vercel.app](https://pharmagent-ai.vercel.app/) — ver [Despliegue en producción](#despliegue-en-producción) para la arquitectura de despliegue completa (frontend/backend/base de datos) |
+| Credenciales de prueba | **No aplica** — la demo pública no tiene login: es una SPA de acceso libre sin autenticación de usuarios (ver [Frontend (SPA)](#frontend-spa)). La única autenticación del proyecto es una `API_KEY` opcional a nivel de servicio para proteger la API de abuso anónimo, no un sistema de cuentas de usuario — ver [Seguridad en un despliegue público](#seguridad-en-un-despliegue-público) |
+| Slides de la presentación | **[PENDIENTE]** — enlace a la carpeta de Google Drive: `[añadir aquí]`. Contenido diapositiva por diapositiva ya preparado en [PRESENTACION_TFM.md](PRESENTACION_TFM.md) |
+| Vídeo explicativo | **[PENDIENTE]** — mismo enlace de Google Drive que las slides: `[añadir aquí]`. Guion de grabación ya preparado en [PRESENTACION_TFM.md](PRESENTACION_TFM.md#guion-de-grabación-del-vídeo) |
 
 ## Descripción y objetivos
 
