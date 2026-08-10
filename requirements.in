@@ -34,13 +34,10 @@ tenacity>=9.0,<10.0
 python-json-logger>=3.0,<5.0
 
 # --- Tests y calidad ---
-# `pytest` fijado por debajo de PYSEC-2026-1845 (corregida en 9.0.3): `pytest-asyncio`
-# (hasta su última versión publicada, 0.26.0) exige `pytest<9` — no hay combinación
-# instalable que traiga la versión corregida todavía. Riesgo real limitado: `pytest` nunca
-# se ejecuta en el proceso de la API desplegada, es una dependencia solo de desarrollo/CI.
-# Revisar cuando pytest-asyncio soporte pytest 9.
-pytest>=8.3,<9.0
-pytest-asyncio>=0.24,<1.0
+# `pytest` en 9.x (corrige PYSEC-2026-1845): requiere `pytest-asyncio>=1.0`, la primera
+# serie que soporta pytest 9 (0.26.0, la última de la serie 0.x, exigía pytest<9).
+pytest>=9.0,<10.0
+pytest-asyncio>=1.0,<2.0
 pytest-cov>=6.0,<7.0
 ruff>=0.7,<1.0
 pre-commit>=4.0,<5.0
