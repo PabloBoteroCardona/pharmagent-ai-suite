@@ -37,8 +37,8 @@ recopilados aquí para que sean fáciles de encontrar por quien evalúe el proye
 | Documentación técnica completa | Este `README.md`, más [AGENTS.md](AGENTS.md), [SKILLS.md](SKILLS.md), [EVALUATION.md](EVALUATION.md) y [docs/adr/](docs/adr/) |
 | Demo en producción (enlace directo) | [pharmagent-ai.vercel.app](https://pharmagent-ai.vercel.app/) — ver [Despliegue en producción](#despliegue-en-producción) para la arquitectura de despliegue completa (frontend/backend/base de datos) |
 | Credenciales de prueba | **No aplica** — la demo pública no tiene login: es una SPA de acceso libre sin autenticación de usuarios (ver [Frontend (SPA)](#frontend-spa)). La única autenticación del proyecto es una `API_KEY` opcional a nivel de servicio para proteger la API de abuso anónimo, no un sistema de cuentas de usuario — ver [Seguridad en un despliegue público](#seguridad-en-un-despliegue-público) |
-| Slides de la presentación | **[PENDIENTE]** — enlace a la carpeta de Google Drive: `[añadir aquí]`. Contenido diapositiva por diapositiva ya preparado en [PRESENTACION_TFM.md](PRESENTACION_TFM.md) |
-| Vídeo explicativo | **[PENDIENTE]** — mismo enlace de Google Drive que las slides: `[añadir aquí]`. Guion de grabación ya preparado en [PRESENTACION_TFM.md](PRESENTACION_TFM.md#guion-de-grabación-del-vídeo) |
+| Slides de la presentación | [Google Drive](https://drive.google.com/file/d/1RICqu9V7xi49T4y4H-8YsFKTUVUaG65T/view?usp=sharing). 
+| Vídeo explicativo | [Google Drive](https://drive.google.com/file/d/1_Ig7fHPUvZXA_rfrjbttkTsC70MYgaBy/view?usp=sharing).
 
 ## Descripción y objetivos
 
