@@ -38,9 +38,9 @@ npm run dev                                     # servidor de desarrollo
   estándar y Pydantic. Las capas externas dependen del dominio a través de `typing.Protocol`
   (`src/domain/ports/`), nunca al revés — los adaptadores de infraestructura los satisfacen
   por tipado estructural (`@runtime_checkable`), sin herencia.
-- **Los agentes NO usan Google ADK** pese a que el diseño conceptual original (AGENTS.md,
-  ADR 001) lo describía — son clases Python `async` simples. Ambos documentos tienen una nota
-  explícita de "Estado real"; no asumir ADK al leer el diseño conceptual.
+- **Los agentes NO usan Google ADK** — ver la nota "Estado real" en
+  [AGENTS.md](AGENTS.md) y [ADR 001](docs/adr/001-stack-python-adk.md) antes de asumir ADK al
+  leer su diseño conceptual.
 - **`frontend/src/style.css`**: la paleta clínica vive en un único bloque `@theme` (Tailwind
   v4) — es el mecanismo real que genera las clases `bg-safe-600`/`text-warning-700`/etc. que
   usa el resto del frontend. No sustituir por un `:root` plano sin actualizar todos los call
