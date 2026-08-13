@@ -34,7 +34,7 @@ recopilados aquí para que sean fáciles de encontrar por quien evalúe el proye
 
 | Recurso | Ubicación |
 |---|---|
-| Documentación técnica completa | Este `README.md`, más [AGENTS.md](AGENTS.md), [SKILLS.md](SKILLS.md), [EVALUATION.md](EVALUATION.md) y [docs/adr/](docs/adr/) |
+| Documentación técnica completa | Este `README.md`, más [docs/AGENTES.md](docs/AGENTES.md), [docs/HERRAMIENTAS.md](docs/HERRAMIENTAS.md), [EVALUATION.md](EVALUATION.md) y [docs/adr/](docs/adr/) |
 | Demo en producción (enlace directo) | [pharmagent-ai.vercel.app](https://pharmagent-ai.vercel.app/) — ver [Despliegue en producción](#despliegue-en-producción) para la arquitectura de despliegue completa (frontend/backend/base de datos) |
 | Credenciales de prueba | **No aplica** — la demo pública no tiene login: es una SPA de acceso libre sin autenticación de usuarios (ver [Frontend (SPA)](#frontend-spa)). La única autenticación del proyecto es una `API_KEY` opcional a nivel de servicio para proteger la API de abuso anónimo, no un sistema de cuentas de usuario — ver [Seguridad en un despliegue público](#seguridad-en-un-despliegue-público) |
 | Slides de la presentación | [Google Drive](https://drive.google.com/file/d/1RICqu9V7xi49T4y4H-8YsFKTUVUaG65T/view?usp=sharing).
@@ -163,8 +163,8 @@ cualquier proveedor externo (o testear con dobles en memoria, ver
 [Pruebas automatizadas](#pruebas-automatizadas-y-cobertura)) sin tocar el dominio ni los
 agentes.
 
-> Los agentes se documentan en detalle en [AGENTS.md](AGENTS.md) y las herramientas
-> (*tools*) que definen su contrato conceptual en [SKILLS.md](SKILLS.md). Ambos documentos
+> Los agentes se documentan en detalle en [docs/AGENTES.md](docs/AGENTES.md) y las herramientas
+> (*tools*) que definen su contrato conceptual en [docs/HERRAMIENTAS.md](docs/HERRAMIENTAS.md). Ambos documentos
 > distinguen explícitamente el diseño objetivo original (orquestación vía Google ADK) del
 > estado real implementado (invocación directa de métodos Python asíncronos).
 
@@ -468,7 +468,7 @@ no búsqueda semántica):
 
 `source` indica si la interacción procede de la base curada interna (`"curated"`,
 autoritativa) o del razonamiento del modelo local para una combinación no cubierta por esa
-base (`"llm"`) — ver [AGENTS.md](AGENTS.md#2-safetycheckagent) para el diseño híbrido
+base (`"llm"`) — ver [docs/AGENTES.md](docs/AGENTES.md#2-safetycheckagent) para el diseño híbrido
 completo y [EVALUATION.md](EVALUATION.md) para su exactitud medida.
 
 **Análisis de receta** (`POST /api/v1/pharmacy/analyze-prescription`, `multipart/form-data`

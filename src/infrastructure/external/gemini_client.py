@@ -7,7 +7,7 @@ para embeddings ni RAG, que permanecen exclusivamente en Ollama local. Nunca pro
 excepciones: ante un fallo de red, API o parseo, degrada a
 `{"drugs": [], "advertencias": []}` para que las capas superiores decidan cómo continuar.
 
-Nota sobre el modelo: `gemini-1.5-pro` (usado originalmente, ver AGENTS.md/SKILLS.md)
+Nota sobre el modelo: `gemini-1.5-pro` (usado originalmente, ver docs/AGENTES.md y docs/HERRAMIENTAS.md)
 ha sido retirado por Google — devuelve `404 NOT_FOUND` para cualquier API key nueva desde
 esta sesión de evaluación (BLOQUE D, ver EVALUATION.md). Se sustituyó por
 `gemini-flash-latest`, un alias siempre apuntando al modelo Flash estable más reciente,

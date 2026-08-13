@@ -1,6 +1,6 @@
 """Agente de extracción de recetas: orquesta la visión multimodal de `GeminiClient`.
 
-Ver [AGENTS.md](../../../AGENTS.md#1-prescriptionagent) para el contrato de
+Ver [AGENTES.md](../../../docs/AGENTES.md#1-prescriptionagent) para el contrato de
 comportamiento (nunca inventar datos ilegibles, `GOOGLE_API_KEY` exclusiva para este
 flujo).
 """

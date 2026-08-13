@@ -6,7 +6,7 @@ Orquesta CIMA (fuente primaria en vivo — ficha, ficha técnica y prospecto), O
 `search_drugs_semantic` consulta primero la caché vectorial (rápido, sin red externa) y,
 si no hay resultados, cae automáticamente a una búsqueda en vivo en CIMA usando `query`
 como nombre de fármaco — a diferencia del orden "CIMA en vivo primero" descrito en el
-diseño original de SKILLS.md, se prioriza la caché por rendimiento (evita un round-trip a
+diseño original de docs/HERRAMIENTAS.md, se prioriza la caché por rendimiento (evita un round-trip a
 CIMA en cada consulta de un fármaco ya conocido) sin sacrificar corrección: si la caché no
 tiene el dato, CIMA en vivo sigue siendo la fuente de verdad consultada antes de devolver
 una respuesta vacía. El resultado de la búsqueda en vivo se indexa automáticamente, así que

@@ -3,11 +3,11 @@
 Orquesta `PrescriptionAgent` (extracción multimodal) y `SafetyCheckAgent` (interacciones
 conocidas) en una única operación — el flujo natural que motiva tener ambos agentes, pero
 que hasta ahora solo existía como dos endpoints aislados (`/analyze-prescription` y
-`/check-interactions`, invocados por separado). Ver [AGENTS.md](../../AGENTS.md) para el
+`/check-interactions`, invocados por separado). Ver [AGENTES.md](../../docs/AGENTES.md) para el
 contrato de cada agente por separado.
 
 Regla de negocio: la verificación de interacciones solo tiene sentido con 2+ fármacos
-(ver guardrail de `check_drug_interactions` en [SKILLS.md](../../SKILLS.md#2-check_drug_interactions))
+(ver guardrail de `check_drug_interactions` en [HERRAMIENTAS.md](../../docs/HERRAMIENTAS.md#2-check_drug_interactions))
 — con 0 o 1 fármaco extraído, se omite y `safety_check` queda en `None`.
 
 Persistencia: si se inyecta un `PrescriptionRecordRepositoryPort`, el resultado se guarda

@@ -126,7 +126,7 @@ class InteractionResult(BaseModel):
         description=(
             "'curated' si procede de la base curada interna (autoritativa); 'llm' si "
             "procede del razonamiento del modelo de lenguaje local para una combinación "
-            "no cubierta por la base curada — ver AGENTS.md."
+            "no cubierta por la base curada — ver docs/AGENTES.md."
         ),
     )
 

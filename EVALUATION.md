@@ -86,7 +86,7 @@ de escritura manuscrita real o imágenes de baja calidad (fuera de alcance de es
    "acierto" que en realidad fue una degradación defensiva; la ejecución de referencia de
    este documento es una re-ejecución posterior sin timeout, donde el caso sí completó con
    `source: "llm"`. Esto confirma que el diseño "ante incertidumbre, nunca aprobar
-   silenciosamente" (ver AGENTS.md) funciona correctamente incluso cuando el LLM no responde
+   silenciosamente" (ver docs/AGENTES.md) funciona correctamente incluso cuando el LLM no responde
    a tiempo — pero también expone que un timeout no se distingue de una respuesta genuina en
    la salida actual (`actual_sources: []` en ambos casos de "no interacciones" y de fallo de
    parseo). Ver "Limitaciones" más abajo.

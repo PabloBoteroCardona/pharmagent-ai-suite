@@ -1,6 +1,6 @@
 """Agente de verificación de seguridad: interacciones farmacológicas conocidas.
 
-Ver [AGENTS.md](../../../AGENTS.md#2-safetycheckagent) para el contrato de
+Ver [AGENTES.md](../../../docs/AGENTES.md#2-safetycheckagent) para el contrato de
 comportamiento. Usa la entidad de dominio `DrugInteraction`
 ([drug_interaction.py](../../domain/models/drug_interaction.py)).
 
@@ -13,7 +13,7 @@ sobre combinaciones no cubiertas. La respuesta del modelo nunca puede contradeci
 sustituir a la base curada, solo complementarla; cada interacción devuelta lleva un campo
 `source` (`"curated"` / `"llm"`) para que el consumidor distinga el nivel de confianza. Ante
 un fallo de parseo o incertidumbre explícita del modelo, el veredicto por defecto es
-`requiere_revision_medica` — nunca una aprobación silenciosa (ver AGENTS.md).
+`requiere_revision_medica` — nunca una aprobación silenciosa (ver docs/AGENTES.md).
 
 Limitación aceptada: `_KNOWN_INTERACTIONS` es una base curada mínima, con fines
 demostrativos (TFM) — no sustituye una base de datos de interacciones clínica completa. El

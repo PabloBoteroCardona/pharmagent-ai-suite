@@ -1,14 +1,14 @@
-# SKILLS.md — Herramientas (Tools) de los agentes
+# HERRAMIENTAS.md — Tools de los agentes de PharmAgent
 
 Este documento define, con **Pydantic v2**, los esquemas de entrada/salida **objetivo** de
-las herramientas conceptuales invocadas por los agentes descritos en [AGENTS.md](AGENTS.md).
+las herramientas conceptuales invocadas por los agentes descritos en [AGENTES.md](AGENTES.md).
 
 **Estado real de la implementación**: estos esquemas documentan el diseño original de un
 posible futuro tool-calling declarativo (Google ADK). La implementación actual no usa ADK ni
 `src/adapters/adk/` (eliminado por estar vacío y redundante con `src/infrastructure/`)
 — cada agente es invocado directamente como método `async` de una clase Python desde su
 endpoint REST correspondiente, con un contrato de entrada/salida más simple definido en
-[drug_schemas.py](src/infrastructure/api/schemas/drug_schemas.py). Cada sección de este
+[drug_schemas.py](../src/infrastructure/api/schemas/drug_schemas.py). Cada sección de este
 documento incluye una nota "Estado real" señalando las diferencias concretas con lo
 implementado.
 
@@ -24,7 +24,7 @@ Convenciones:
 
 ## 1. `extract_prescription_from_image`
 
-Usada por **PrescriptionAgent** ([AGENTS.md](AGENTS.md#1-prescriptionagent)).
+Usada por **PrescriptionAgent** ([AGENTES.md](AGENTES.md#1-prescriptionagent)).
 
 **Trigger**: invocar cuando la entrada del usuario sea una imagen (`mime-type: image/*`),
 un PDF, o una solicitud explícita de digitalización de un documento físico (p. ej. "sube
@@ -109,31 +109,31 @@ class PrescriptionExtractionResult(BaseModel):
 **Umbral de revisión manual**: `PRESCRIPTION_MIN_CONFIDENCE` (`.env`) es diseño objetivo, no
 implementado (ver "Estado real" abajo) — el nombre de archivo `process_prescription.py` que
 sugiere este apartado del diseño original coincide por casualidad con
-[`src/use_cases/process_prescription.py`](src/use_cases/process_prescription.py), creado en
+[`src/use_cases/process_prescription.py`](../src/use_cases/process_prescription.py), creado en
 BLOQUE D con un propósito distinto (orquestar `PrescriptionAgent` → `SafetyCheckAgent`, sin
 ningún umbral de confianza): ver la nota de "Estado real" de esta tool.
 
 **Estado real**: implementado en
-[`GeminiClient.analyze_prescription_image`](src/infrastructure/external/gemini_client.py)
+[`GeminiClient.analyze_prescription_image`](../src/infrastructure/external/gemini_client.py)
 (modelo `gemini-flash-latest` — `gemini-1.5-pro`, usado originalmente, fue retirado por
-Google; ver [EVALUATION.md](EVALUATION.md)) con un contrato más simple: entrada
+Google; ver [EVALUATION.md](../EVALUATION.md)) con un contrato más simple: entrada
 `image_bytes: bytes` + `mime_type: str`; salida `{"drugs": [{"farmaco", "dosificacion",
 "frecuencia", "duracion"}], "advertencias": [str]}` (`PrescriptionAnalysisResponse` en
-[drug_schemas.py](src/infrastructure/api/schemas/drug_schemas.py)). No hay `confidence_score`
+[drug_schemas.py](../src/infrastructure/api/schemas/drug_schemas.py)). No hay `confidence_score`
 por campo, `requires_manual_review`, `prescriber_name`/`patient_name`/`issue_date`, ni el
 umbral `PRESCRIPTION_MIN_CONFIDENCE` — todo eso es diseño objetivo, no implementado. El
 guardrail de "nunca inventar datos ilegibles" sí se aplica, vía instrucción explícita en el
 prompt de sistema de `GeminiClient` (verificado con una imagen real sin contenido de receta:
 Gemini devolvió `drugs: []` en vez de alucinar un fármaco; y con recall=1.0 sobre 3 imágenes
-sintéticas en [EVALUATION.md](EVALUATION.md)). Desde BLOQUE D, esta tool se puede encadenar
+sintéticas en [EVALUATION.md](../EVALUATION.md)). Desde BLOQUE D, esta tool se puede encadenar
 automáticamente con `check_drug_interactions` vía `POST /process-prescription`
-(`ProcessPrescriptionUseCase`) — ver sección 2 y [AGENTS.md](AGENTS.md#1-prescriptionagent).
+(`ProcessPrescriptionUseCase`) — ver sección 2 y [AGENTES.md](AGENTES.md#1-prescriptionagent).
 
 ---
 
 ## 2. `check_drug_interactions`
 
-Usada por **SafetyCheckAgent** ([AGENTS.md](AGENTS.md#2-safetycheckagent)).
+Usada por **SafetyCheckAgent** ([AGENTES.md](AGENTES.md#2-safetycheckagent)).
 
 **Trigger**: invocar cuando se identifiquen 2 o más principios activos en la consulta del
 usuario, o inmediatamente tras una extracción de receta (`Prescription` /
@@ -220,7 +220,7 @@ o si `patient_context` es `None` y hay medicación crónica desconocida, el `ver
 `FIT` (validado en `src/domain/services/drug_safety_service.py`, no confiado únicamente al LLM).
 
 **Estado real**: implementado en
-[`SafetyCheckAgent.check_interactions`](src/application/agents/safety_agent.py) (`async def`
+[`SafetyCheckAgent.check_interactions`](../src/application/agents/safety_agent.py) (`async def`
 desde BLOQUE D) con un contrato más simple: entrada `drugs: list[str]` (mínimo 2, sin
 `patient_context`); salida `{"interactions": [{"primary_drug", "secondary_drug", "severity",
 "description", "clinical_recommendation", "source"}], "verdict"}`
@@ -238,7 +238,7 @@ acercándose al diseño objetivo de un `SafetyCheckAgent` basado en `llama-3.1` 
 *fallback* a Gemini remoto descrito originalmente (no implementado, limitación aceptada).
 Verificado con 7/7 veredictos correctos
 sobre un dataset de evaluación sintético (3 casos de base curada + 4 de razonamiento LLM) —
-ver [EVALUATION.md](EVALUATION.md) para metodología completa, latencias reales, y un
+ver [EVALUATION.md](../EVALUATION.md) para metodología completa, latencias reales, y un
 hallazgo relevante sobre un timeout de Ollama que produjo un acierto por coincidencia (no
 por razonamiento genuino) en una ejecución previa.
 
@@ -246,14 +246,14 @@ por razonamiento genuino) en una ejecución previa.
 
 ## 3. `search_cima_official_data`
 
-Usada por **RAGPharmAgent** ([AGENTS.md](AGENTS.md#3-ragpharmagent)).
+Usada por **RAGPharmAgent** ([AGENTES.md](AGENTES.md#3-ragpharmagent)).
 
 Sustituye a la antigua `search_cima_vector_db`, ahora únicamente vector-first, por una
 estrategia de **dos fuentes**:
 
 - **Fuente primaria — CIMA en vivo**: consulta directamente los endpoints oficiales REST de
   la AEMPS (`https://cima.aemps.es/cima/rest/...`) vía
-  [`CimaAPIClient`](src/infrastructure/external/cima_client.py) para obtener ficha técnica,
+  [`CimaAPIClient`](../src/infrastructure/external/cima_client.py) para obtener ficha técnica,
   prospecto, composición y condiciones de prescripción en tiempo real. Es la fuente de
   verdad: si responde, su resultado prevalece sobre la caché.
 - **Fuente secundaria / caché — `pgvector`**: cada prospecto/ficha técnica obtenido en vivo
@@ -384,7 +384,7 @@ class RAGAnswer(BaseModel):
 
 **Reglas de negocio**:
 - si la consulta en vivo a `cima.aemps.es` falla (`httpx.HTTPError`, capturado en
-  [`CimaAPIClient`](src/infrastructure/external/cima_client.py), que devuelve `[]`/`None` en
+  [`CimaAPIClient`](../src/infrastructure/external/cima_client.py), que devuelve `[]`/`None` en
   lugar de propagar la excepción), la tool recurre automáticamente a la caché vectorial y
   marca `primary_source_available = False`, sin interrumpir el flujo del agente;
 - si `SearchCimaOfficialDataResult.fragments` queda vacío (ni CIMA en vivo ni la caché
@@ -399,20 +399,20 @@ class RAGAnswer(BaseModel):
 **Estado real**: implementado de forma más simple, con **dos fuentes por consulta pero en
 orden invertido respecto al diseño original** (caché primero, CIMA en vivo como respaldo —
 no CIMA primero con caché como *fallback*). `RAGPharmAgent.answer_consultation`
-([pharmacy_agent.py](src/application/agents/pharmacy_agent.py)) llama a
+([pharmacy_agent.py](../src/application/agents/pharmacy_agent.py)) llama a
 `DrugService.search_drugs_semantic(query_o_drug_name, limit=3)`
-([drug_service.py](src/application/services/drug_service.py)), que consulta primero
+([drug_service.py](../src/application/services/drug_service.py)), que consulta primero
 `pgvector` (distancia coseno con umbral de relevancia — ver
-[drug_repository.py](src/infrastructure/repositories/drug_repository.py)) y, solo si no hay
+[drug_repository.py](../src/infrastructure/repositories/drug_repository.py)) y, solo si no hay
 resultados relevantes, invoca a `CimaAPIClient.search_medicamentos` en vivo, indexando
 automáticamente los resultados encontrados. No hay `CimaDataSource`
 (`CIMA_LIVE`/`VECTOR_CACHE`) ni `primary_source_available` como en el diseño objetivo, pero
 sí un campo equivalente y más simple: `source: "cache"|"live"|"none"` en la salida real
-(`ConsultationResponse`, ver [AGENTS.md](AGENTS.md#3-ragpharmagent)). El script de ingesta
+(`ConsultationResponse`, ver [AGENTES.md](AGENTES.md#3-ragpharmagent)). El script de ingesta
 por lotes (`scripts/ingest_drugs.py`) sigue existiendo como vía adicional para poblar la
 caché de antemano, pero ya no es la única vía — una consulta de un fármaco no cacheado lo
 indexa automáticamente en el momento. Verificado end-to-end contra CIMA/Ollama/Postgres
-reales — ver "Verificación" en [AGENTS.md](AGENTS.md#3-ragpharmagent).
+reales — ver "Verificación" en [AGENTES.md](AGENTES.md#3-ragpharmagent).
 
 ---
 
@@ -423,18 +423,18 @@ estar vacío y redundante con `src/infrastructure/`. La implementación real es:
 
 | Tool (diseño objetivo) | Implementación real | Puerto de dominio real | Endpoint REST |
 |---|---|---|---|
-| `extract_prescription_from_image` | [`GeminiClient`](src/infrastructure/external/gemini_client.py) + [`PrescriptionAgent`](src/application/agents/prescription_agent.py) | `PrescriptionVisionPort` ([drug_ports.py](src/domain/ports/drug_ports.py)) | `POST /api/v1/pharmacy/analyze-prescription` (solo extracción) / `POST /api/v1/pharmacy/process-prescription` (encadenado con `check_drug_interactions`) |
-| `check_drug_interactions` | [`SafetyCheckAgent`](src/application/agents/safety_agent.py) | `LanguageModelPort` opcional (razonamiento para combinaciones no cubiertas por la base curada) + domain model `DrugInteraction` | `POST /api/v1/pharmacy/check-interactions` / `POST /api/v1/pharmacy/process-prescription` |
-| `search_cima_official_data` | [`DrugService`](src/application/services/drug_service.py) + [`RAGPharmAgent`](src/application/agents/pharmacy_agent.py) | `CimaDataSourcePort` + `LanguageModelPort` + `DrugRepositoryPort` ([drug_ports.py](src/domain/ports/drug_ports.py)) | `POST /api/v1/pharmacy/search` y `POST /api/v1/pharmacy/consult` (caché primero, CIMA en vivo como respaldo automático) |
+| `extract_prescription_from_image` | [`GeminiClient`](../src/infrastructure/external/gemini_client.py) + [`PrescriptionAgent`](../src/application/agents/prescription_agent.py) | `PrescriptionVisionPort` ([drug_ports.py](../src/domain/ports/drug_ports.py)) | `POST /api/v1/pharmacy/analyze-prescription` (solo extracción) / `POST /api/v1/pharmacy/process-prescription` (encadenado con `check_drug_interactions`) |
+| `check_drug_interactions` | [`SafetyCheckAgent`](../src/application/agents/safety_agent.py) | `LanguageModelPort` opcional (razonamiento para combinaciones no cubiertas por la base curada) + domain model `DrugInteraction` | `POST /api/v1/pharmacy/check-interactions` / `POST /api/v1/pharmacy/process-prescription` |
+| `search_cima_official_data` | [`DrugService`](../src/application/services/drug_service.py) + [`RAGPharmAgent`](../src/application/agents/pharmacy_agent.py) | `CimaDataSourcePort` + `LanguageModelPort` + `DrugRepositoryPort` ([drug_ports.py](../src/domain/ports/drug_ports.py)) | `POST /api/v1/pharmacy/search` y `POST /api/v1/pharmacy/consult` (caché primero, CIMA en vivo como respaldo automático) |
 
-`PrescriptionRecordRepositoryPort` ([drug_ports.py](src/domain/ports/drug_ports.py)),
+`PrescriptionRecordRepositoryPort` ([drug_ports.py](../src/domain/ports/drug_ports.py)),
 añadido en BLOQUE D, no corresponde a ninguna *tool* de este documento — es infraestructura
 de persistencia auditable para `POST /process-prescription`
-([`ProcessPrescriptionUseCase`](src/use_cases/process_prescription.py)), fuera del alcance
-conceptual original de SKILLS.md.
+([`ProcessPrescriptionUseCase`](../src/use_cases/process_prescription.py)), fuera del alcance
+conceptual original de HERRAMIENTAS.md.
 
 Los modelos de este documento (`DrugInteractionReport` y esquemas afines) son el diseño
 conceptual de las *tools*; el contrato REST real y más simple efectivamente implementado vive
-en [drug_schemas.py](src/infrastructure/api/schemas/drug_schemas.py). Las entidades de
+en [drug_schemas.py](../src/infrastructure/api/schemas/drug_schemas.py). Las entidades de
 dominio puras (`Prescription`, `DrugInteraction`) sí están implementadas tal cual en
 `src/domain/models/`.

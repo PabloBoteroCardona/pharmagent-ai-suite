@@ -1,8 +1,8 @@
 """Agente RAG farmacéutico: responde consultas grounded en fármacos, con CIMA en vivo
 como respaldo cuando la caché semántica no tiene el dato.
 
-Ver [AGENTS.md](../../../AGENTS.md#3-ragpharmagent) y
-[SKILLS.md](../../../SKILLS.md#3-search_cima_official_data) para el contrato de
+Ver [AGENTES.md](../../../docs/AGENTES.md#3-ragpharmagent) y
+[HERRAMIENTAS.md](../../../docs/HERRAMIENTAS.md#3-search_cima_official_data) para el contrato de
 comportamiento de este agente (fuente primaria CIMA + caché `pgvector`, respuesta grounded).
 """
 

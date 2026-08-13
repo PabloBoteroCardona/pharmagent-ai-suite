@@ -11,7 +11,7 @@ Aceptado — 2026-08-04.
 > simples que dependen de puertos de dominio (`src/domain/ports/`), sin el SDK de
 > Google ADK ni la carpeta `src/adapters/adk/` descrita más abajo. El resto de la
 > decisión (Python, Clean Architecture, FastAPI, PostgreSQL + pgvector) sí se mantiene
-> tal cual. Ver la nota "Estado real" en [AGENTS.md](../../AGENTS.md) para el detalle
+> tal cual. Ver la nota "Estado real" en [AGENTES.md](../AGENTES.md) para el detalle
 > agente por agente.
 
 ## Contexto
@@ -89,7 +89,7 @@ Las capas externas dependen del dominio, nunca al revés. Esto permite:
 - Integración directa con Pydantic v2 para validación de entrada/salida en la capa de
   presentación (`src/infrastructure/api`), reutilizando los mismos principios de
   tipado estricto que ya se aplican en el dominio y en los esquemas de las tools
-  (ver [SKILLS.md](../../SKILLS.md)).
+  (ver [HERRAMIENTAS.md](../HERRAMIENTAS.md)).
 - Generación automática de documentación OpenAPI, útil para la defensa y demostración
   del TFM.
 
@@ -98,7 +98,7 @@ Las capas externas dependen del dominio, nunca al revés. Esto permite:
 - Framework de orquestación de agentes que permite definir `LlmAgent`s con `tools`
   tipadas (Pydantic) y alternar entre modelos remotos (Gemini, multimodal) y locales
   (Llama 3.1, Gemma 2) sin reescribir la lógica de orquestación — ver
-  [AGENTS.md](../../AGENTS.md) para el detalle de los tres agentes.
+  [AGENTES.md](../AGENTES.md) para el detalle de los tres agentes.
 - Encaja de forma natural con la separación de puertos/adaptadores: cada agente ADK es
   un adaptador (`src/adapters/adk/`) que implementa una interfaz de dominio
   (`src/domain/services/`), de modo que el resto del sistema depende de la interfaz y

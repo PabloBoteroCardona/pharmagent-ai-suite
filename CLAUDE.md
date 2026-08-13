@@ -3,7 +3,7 @@
 Sistema multiagente (procesamiento de recetas, verificación de interacciones, consulta RAG
 sobre fichas técnicas AEMPS/CIMA) con backend en Clean Architecture (Python/FastAPI) y un
 frontend SPA independiente (TypeScript/Vite). Ver [README.md](README.md) para la descripción
-completa, [AGENTS.md](AGENTS.md)/[SKILLS.md](SKILLS.md) para el contrato de los agentes, y
+completa, [docs/AGENTES.md](docs/AGENTES.md)/[docs/HERRAMIENTAS.md](docs/HERRAMIENTAS.md) para el contrato de los agentes, y
 [docs/adr/](docs/adr/) para las decisiones de arquitectura.
 
 ## Stack
@@ -39,7 +39,7 @@ npm run dev                                     # servidor de desarrollo
   (`src/domain/ports/`), nunca al revés — los adaptadores de infraestructura los satisfacen
   por tipado estructural (`@runtime_checkable`), sin herencia.
 - **Los agentes NO usan Google ADK** — ver la nota "Estado real" en
-  [AGENTS.md](AGENTS.md) y [ADR 001](docs/adr/001-stack-python-adk.md) antes de asumir ADK al
+  [docs/AGENTES.md](docs/AGENTES.md) y [ADR 001](docs/adr/001-stack-python-adk.md) antes de asumir ADK al
   leer su diseño conceptual.
 - **`frontend/src/style.css`**: la paleta clínica vive en un único bloque `@theme` (Tailwind
   v4) — es el mecanismo real que genera las clases `bg-safe-600`/`text-warning-700`/etc. que
@@ -73,7 +73,7 @@ npm run dev                                     # servidor de desarrollo
 `.memory/` es un directorio de trabajo local (listado en `.gitignore`) que da continuidad
 entre sesiones de desarrollo asistido: no se sube al repositorio porque es un registro de
 proceso (quién pidió qué y por qué), no documentación del producto — la documentación
-pública equivalente vive en `README.md`, `AGENTS.md`, `SKILLS.md` y `docs/adr/`.
+pública equivalente vive en `README.md`, `docs/AGENTES.md`, `docs/HERRAMIENTAS.md` y `docs/adr/`.
 
 - Al finalizar cualquier paso del roadmap, implementación de función, corrección de bug o
   prueba (backend **o frontend**), ACTUALIZA SIEMPRE `.memory/CONTEXT.md`.
