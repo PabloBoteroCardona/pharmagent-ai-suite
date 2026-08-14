@@ -15,4 +15,8 @@ jobs:
       - name: Consultar la base de datos
         env:
           PGSSLMODE: require
-        run: psql "${{ secrets.SUPABASE_DB_URL }}" -c "select 1;"
+          # Pasado por variable de entorno (no interpolado directamente en `run:`) para que
+          # bash no reinterprete caracteres especiales de shell ($, backticks...) que pueda
+          # contener la contraseña.
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: psql "$SUPABASE_DB_URL" -c "select 1;"
