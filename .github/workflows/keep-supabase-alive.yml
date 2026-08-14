@@ -12,6 +12,13 @@ jobs:
   ping-supabase:
     runs-on: ubuntu-latest
     steps:
+      # TEMPORAL: solo imprime la longitud del secreto (nunca el valor) para diagnosticar
+      # por qué psql lo recibe vacío. Quitar este paso en cuanto se confirme la causa.
+      - name: Diagnóstico del secreto
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: echo "longitud=${#SUPABASE_DB_URL}"
+
       - name: Consultar la base de datos
         env:
           PGSSLMODE: require
