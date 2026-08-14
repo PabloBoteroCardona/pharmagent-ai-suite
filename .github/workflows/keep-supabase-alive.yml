@@ -1,0 +1,18 @@
+name: Keep Supabase alive
+
+# Supabase pausa los proyectos del free tier tras 7 días sin actividad en la base de
+# datos. Este job ejecuta una query trivial cada 3 días para que nunca se cumpla ese
+# umbral. No corre en push/pull_request porque no tiene relación con el código.
+on:
+  schedule:
+    - cron: "0 8 */3 * *" # cada 3 días a las 08:00 UTC
+  workflow_dispatch:
+
+jobs:
+  ping-supabase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consultar la base de datos
+        env:
+          PGSSLMODE: require
+        run: psql "${{ secrets.SUPABASE_DB_URL }}" -c "select 1;"
