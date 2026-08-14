@@ -25,6 +25,7 @@ jobs:
           echo "contiene_arroba=$([[ "$SUPABASE_DB_URL" == *@* ]] && echo si || echo no)"
           echo "contiene_supabase=$([[ "$SUPABASE_DB_URL" == *supabase* ]] && echo si || echo no)"
           echo "contiene_espacio_interno=$([[ "$SUPABASE_DB_URL" == *" "* ]] && echo si || echo no)"
+          echo "primeros_13_caracteres=${SUPABASE_DB_URL:0:13}"
 
       - name: Consultar la base de datos
         env:
