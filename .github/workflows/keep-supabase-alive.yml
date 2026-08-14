@@ -19,4 +19,7 @@ jobs:
           # bash no reinterprete caracteres especiales de shell ($, backticks...) que pueda
           # contener la contraseña.
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: psql "$SUPABASE_DB_URL" -c "select 1;"
+        # `tr -d` quita cualquier salto de línea/retorno de carro que se haya colado al
+        # guardar el secreto en GitHub (p. ej. un pegado con un \n final) — de lo contrario
+        # rompe el último componente de la URI (el nombre de la base de datos).
+        run: psql "$(printf '%s' "$SUPABASE_DB_URL" | tr -d '\n\r')" -c "select 1;"
