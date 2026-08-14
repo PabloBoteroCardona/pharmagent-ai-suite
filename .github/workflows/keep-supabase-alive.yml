@@ -18,11 +18,13 @@ jobs:
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
-          trimmed="$(printf '%s' "$SUPABASE_DB_URL" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
           echo "longitud=${#SUPABASE_DB_URL}"
-          echo "longitud_sin_espacios=${#trimmed}"
-          echo "empieza_con_postgresql=$([[ "$SUPABASE_DB_URL" == postgresql://* ]] && echo si || echo no)"
-          echo "empieza_con_postgres=$([[ "$SUPABASE_DB_URL" == postgres://* ]] && echo si || echo no)"
+          echo "primer_caracter_es_comilla=$([[ "$SUPABASE_DB_URL" == \"* || "$SUPABASE_DB_URL" == \'* ]] && echo si || echo no)"
+          echo "primer_caracter_es_p=$([[ "${SUPABASE_DB_URL:0:1}" == "p" ]] && echo si || echo no)"
+          echo "contiene_postgresql=$([[ "$SUPABASE_DB_URL" == *postgresql* ]] && echo si || echo no)"
+          echo "contiene_arroba=$([[ "$SUPABASE_DB_URL" == *@* ]] && echo si || echo no)"
+          echo "contiene_supabase=$([[ "$SUPABASE_DB_URL" == *supabase* ]] && echo si || echo no)"
+          echo "contiene_espacio_interno=$([[ "$SUPABASE_DB_URL" == *" "* ]] && echo si || echo no)"
 
       - name: Consultar la base de datos
         env:
