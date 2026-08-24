@@ -127,7 +127,15 @@ class CimaAPIClient:
             return None
 
         try:
-            secciones = response.json().get("secciones", [])
+            payload = response.json()
+            # CIMA es inconsistente también en la forma del JSON: para algunos
+            # medicamentos devuelve directamente el array de secciones (`[...]`) en
+            # vez de envolverlo en `{"secciones": [...]}`. Bug real en producción:
+            # `.get("secciones", [])` sobre una lista lanza `AttributeError` sin
+            # capturar, tumbando la petición completa con un 500.
+            secciones = (
+                payload.get("secciones", []) if isinstance(payload, dict) else payload
+            )
         except json.JSONDecodeError:
             # CIMA es inconsistente: para algunos medicamentos (sobre todo genéricos o
             # documentos más antiguos) este endpoint devuelve el texto completo

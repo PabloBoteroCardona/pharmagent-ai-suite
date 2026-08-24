@@ -195,6 +195,29 @@ class TestGetProspectoHtml:
         assert result is None
 
     @pytest.mark.asyncio
+    async def test_concatenates_html_fragments_when_response_is_bare_list(self) -> None:
+        """Bug real descubierto en producción: CIMA devuelve, para algunos
+        medicamentos, el array de secciones directamente (`[...]`) en vez de
+        envuelto en `{"secciones": [...]}`. Antes del fix, `.get("secciones", [])`
+        sobre una lista lanzaba `AttributeError` sin capturar y tumbaba la
+        petición completa con un 500."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json=[
+                    {"contenido": "<p>Sección 1</p>"},
+                    {"contenido": "<p>Sección 2</p>"},
+                ],
+            )
+
+        client = _client_with_transport(handler)
+
+        result = await client.get_prospecto_html("12345")
+
+        assert result == "<p>Sección 1</p>\n<p>Sección 2</p>"
+
+    @pytest.mark.asyncio
     async def test_falls_back_to_raw_text_when_response_is_not_json(self) -> None:
         """Bug real descubierto en producción — ver el mismo test en
         `TestGetFichaTecnicaHtml` para el detalle completo: CIMA devuelve el prospecto
