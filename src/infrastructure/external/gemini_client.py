@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 
+import requests
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError
@@ -101,7 +102,13 @@ class GeminiClient:
                 ),
             )
             data = json.loads(response.text or "{}")
-        except (APIError, json.JSONDecodeError, ValueError) as exc:
+        except (
+            APIError,
+            json.JSONDecodeError,
+            ValueError,
+            requests.exceptions.Timeout,
+            requests.exceptions.ConnectionError,
+        ) as exc:
             logger.warning(
                 "gemini_analyze_prescription_image_failed", extra={"error": str(exc)}
             )

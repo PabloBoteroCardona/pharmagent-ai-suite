@@ -137,7 +137,9 @@ pyyaml==6.0.3
     #   pre-commit
     #   uvicorn
 requests==2.34.2
-    # via google-genai
+    # via
+    #   -r requirements.in
+    #   google-genai
 ruff==0.16.1
     # via -r requirements.in
 sentry-sdk==2.66.1

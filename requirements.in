@@ -29,6 +29,15 @@ google-genai>=0.7,<1.0
 # --- Cliente HTTP (APIs externas, p. ej. CIMA/AEMPS) ---
 httpx>=0.27,<1.0
 
+# --- Cliente HTTP interno de google-genai (síncrono, no httpx) ---
+# `google-genai` usa `requests` (no httpx) para sus llamadas HTTP internas — se declara aquí
+# como dependencia directa (antes solo transitiva) porque `retry.py`/`gemini_client.py`
+# necesitan importar sus tipos de excepción (`requests.exceptions.Timeout`/`ConnectionError`)
+# para reintentar y degradar correctamente los timeouts de Gemini (bug real de producción:
+# antes de esto, un timeout de Gemini se propagaba sin capturar y tumbaba la petición con 500
+# en vez de reintentarse o degradar a resultado vacío).
+requests>=2.32,<3.0
+
 # --- Resiliencia y observabilidad de los clientes externos (CIMA, Groq, Ollama, Gemini) ---
 tenacity>=9.0,<10.0
 python-json-logger>=3.0,<5.0

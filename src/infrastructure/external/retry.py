@@ -12,6 +12,7 @@ que antes de añadir reintentos.
 from __future__ import annotations
 
 import httpx
+import requests
 from google.genai.errors import APIError as GenAIAPIError
 from google.genai.errors import ClientError as GenAIClientError
 from google.genai.errors import ServerError as GenAIServerError
@@ -28,6 +29,14 @@ def _is_transient_error(exc: BaseException) -> bool:
     if isinstance(exc, httpx.HTTPStatusError):
         return exc.response.status_code in RETRYABLE_HTTP_STATUS_CODES
     if isinstance(exc, httpx.TransportError):
+        return True
+    # `google-genai` usa `requests` (no httpx) para sus llamadas HTTP internas — un timeout o
+    # fallo de conexión ahí nunca llega a envolverse en GenAIServerError/GenAIAPIError (esos
+    # solo aplican cuando sí hubo respuesta HTTP). Bug real en producción: sin esto,
+    # `requests.exceptions.ReadTimeout` no se reintentaba y se propagaba sin capturar (500).
+    if isinstance(
+        exc, (requests.exceptions.Timeout, requests.exceptions.ConnectionError)
+    ):
         return True
     if isinstance(exc, GenAIServerError):
         return True

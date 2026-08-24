@@ -113,6 +113,28 @@ class TestAnalyzePrescriptionImage:
         assert result == {"drugs": [], "advertencias": []}
 
     @pytest.mark.asyncio
+    async def test_returns_empty_result_on_read_timeout(self) -> None:
+        """Bug real en producción: `google-genai` usa `requests` (no httpx) para sus
+        llamadas HTTP internas — `requests.exceptions.ReadTimeout` no estaba entre las
+        excepciones capturadas, así que un timeout de Gemini (bajo alta demanda de
+        Google) se propagaba sin capturar y tumbaba la petición con un 500 en vez de
+        degradar como el resto de fallos de este cliente."""
+        client = GeminiClient(api_key="fake-key-for-tests")
+        client._client = SimpleNamespace(
+            aio=SimpleNamespace(
+                models=SimpleNamespace(
+                    generate_content=AsyncMock(
+                        side_effect=requests.exceptions.ReadTimeout("timed out")
+                    )
+                )
+            )
+        )
+
+        result = await client.analyze_prescription_image(b"fake-image-bytes")
+
+        assert result == {"drugs": [], "advertencias": []}
+
+    @pytest.mark.asyncio
     async def test_defaults_missing_fields_to_empty_lists(self) -> None:
         """Si el modelo devuelve un JSON válido pero sin alguno de los campos
         esperados, el cliente no debe lanzar `KeyError`."""
