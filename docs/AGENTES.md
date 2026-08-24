@@ -105,7 +105,7 @@ seguridad a partir de la lista de fármacos ya extraída.
 
 | Campo | Valor |
 |---|---|
-| **Modelo** | **Diseño híbrido** (añadido en [BLOQUE D]): base curada en memoria (determinista, autoritativa) + `llama-3.1-8b-instant` en la nube vía Groq como razonamiento complementario para combinaciones no cubiertas por la base. Antes de migrar a Groq el modelo era `llama3` local vía Ollama — sustituido por latencia (~30s en CPU local frente a <2s en Groq) |
+| **Modelo** | **Diseño híbrido** (añadido en [BLOQUE D]): base curada en memoria (determinista, autoritativa) + `openai/gpt-oss-20b` en la nube vía Groq como razonamiento complementario para combinaciones no cubiertas por la base. Antes de migrar a Groq el modelo era `llama3` local vía Ollama — sustituido por latencia (~30s en CPU local frente a <2s en Groq) |
 | **Tipo de invocación** | Método Python asíncrono (`check_interactions`, `async def` desde BLOQUE D). Consulta la base curada primero (sin red); solo si no hay coincidencia y hay un `LanguageModelPort` inyectado, llama a `GroqClient.generate_completion` con un prompt restrictivo |
 | **Ubicación real** | [`src/application/agents/safety_agent.py`](../src/application/agents/safety_agent.py) |
 | **Puerto de dominio** | `LanguageModelPort` (opcional, inyectado — `None` desactiva el razonamiento LLM y el agente degrada al comportamiento de BLOQUE C) — usa además directamente la entidad de dominio `DrugInteraction` ([drug_interaction.py](../src/domain/models/drug_interaction.py)) |
@@ -121,7 +121,7 @@ seguridad a partir de la lista de fármacos ya extraída.
   devolverla tal cual (`source: "curated"`) — **nunca** se consulta al LLM en este caso,
   para no arriesgar que un modelo contradiga una interacción ya verificada.
 - **Paso 2 — razonamiento LLM (complementario)**: si ningún par de la base curada aplica y
-  hay un `LanguageModelPort` inyectado, consulta a `llama-3.1-8b-instant` (Groq) con un
+  hay un `LanguageModelPort` inyectado, consulta a `openai/gpt-oss-20b` (Groq) con un
   prompt que exige JSON estructurado y un campo `uncertain: bool` explícito. Las
   interacciones que devuelva se marcan `source: "llm"`.
 - Emitir una recomendación explícita: `apto`, `apto_con_precaucion` o `requiere_revision_medica`.
@@ -189,7 +189,7 @@ medicamentos (AEMPS/CIMA) mediante *Retrieval-Augmented Generation*.
 
 | Campo | Valor |
 |---|---|
-| **Modelo** | Groq (`llama-3.1-8b-instant`) para generación, migrado por latencia (~30s en CPU local frente a <2s en Groq); Ollama local (`nomic-embed-text`, 768 dim) para embeddings, sin cambios y exclusivamente local (nunca un proveedor externo) — **no** `gemma-2` como decía el diseño original. Antes de la migración, la generación también era Ollama local (`llama3`) |
+| **Modelo** | Groq (`openai/gpt-oss-20b`) para generación, migrado por latencia (~30s en CPU local frente a <2s en Groq); Ollama local (`nomic-embed-text`, 768 dim) para embeddings, sin cambios y exclusivamente local (nunca un proveedor externo) — **no** `gemma-2` como decía el diseño original. Antes de la migración, la generación también era Ollama local (`llama3`) |
 | **Tipo de invocación** | Método Python asíncrono (`answer_consultation`), sin capa ADK/tool-calling |
 | **Ubicación real** | [`src/application/agents/pharmacy_agent.py`](../src/application/agents/pharmacy_agent.py) (`RAGPharmAgent`), orquestado por [`ConsultDrugRAGUseCase`](../src/use_cases/consult_drug_rag.py) |
 | **Puerto de dominio** | `LanguageModelPort` (generación/embeddings) + `DrugService` (aplicación) sobre `CimaDataSourcePort`/`DrugRepositoryPort` ([drug_ports.py](../src/domain/ports/drug_ports.py)) |
@@ -305,7 +305,7 @@ respuesta completa citando los 3 medicamentos de losartán encontrados.
   individual (latencia, modelo usado, éxito/fallback) como describía el diseño original —
   aunque sí existe una medición de latencia puntual (no continua) en
   [EVALUATION.md](../EVALUATION.md).
-- **Configuración real**: nombres de modelo (`gemini-flash-latest`, `llama-3.1-8b-instant`
+- **Configuración real**: nombres de modelo (`gemini-flash-latest`, `openai/gpt-oss-20b`
   vía Groq, `nomic-embed-text`) y endpoints (`OLLAMA_BASE_URL`, `GROQ_BASE_URL`,
   `CIMA_BASE_URL`, `GOOGLE_API_KEY`) se leen de `src/infrastructure/config/settings.py`
   (`pydantic-settings`, BLOQUE A) — ya implementado, no pendiente. También centraliza

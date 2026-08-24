@@ -50,7 +50,7 @@ comprometer la seguridad del paciente ni la privacidad de los datos de salud que
 2. **Verificación de interacciones farmacológicas** entre los fármacos de una receta
    (`SafetyCheckAgent`): una base curada de interacciones documentadas actúa como fuente
    autoritativa, y para combinaciones no cubiertas por esa base se consulta opcionalmente a
-   un modelo de lenguaje en la nube (Groq/`llama-3.1-8b-instant`) — con un veredicto
+   un modelo de lenguaje en la nube (Groq/`openai/gpt-oss-20b`) — con un veredicto
    explícito y nunca una aprobación silenciosa ante una interacción grave o ante
    incertidumbre del modelo.
 3. **Consulta en lenguaje natural** sobre fichas técnicas oficiales de medicamentos
@@ -112,7 +112,7 @@ distinta según el entorno:
 | Validación / esquemas | Pydantic v2 |
 | Persistencia | PostgreSQL 16 + `pgvector`, SQLAlchemy 2.0 async, `asyncpg`, Alembic (migraciones) |
 | Embeddings locales | Ollama (`nomic-embed-text`) |
-| LLM de generación remoto | Groq (`llama-3.1-8b-instant`), para `SafetyCheckAgent`/`RAGPharmAgent` |
+| LLM de generación remoto | Groq (`openai/gpt-oss-20b`), para `SafetyCheckAgent`/`RAGPharmAgent` |
 | LLM multimodal remoto | Google Gemini (`google-genai`, modelo `gemini-flash-latest`), exclusivo para extracción de recetas |
 | Fuente de datos oficial | API REST de CIMA/AEMPS (`https://cima.aemps.es/cima/rest`) |
 | Observabilidad | Sentry (`sentry-sdk`, captura de errores a nivel de aplicación) |

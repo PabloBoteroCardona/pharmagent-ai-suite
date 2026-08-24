@@ -48,9 +48,12 @@ class Settings(BaseSettings):
     # excepción (Groq no ofrece API de embeddings y la política de privacidad de datos de
     # salud de arriba sigue vigente para ese camino). Si `groq_api_key` no está configurada,
     # `GroqClient.generate_completion` degrada a `""` en vez de fallar.
+    # `openai/gpt-oss-20b`: Groq deprecó `llama-3.1-8b-instant` (apagado 2026-08-16) — este es
+    # su reemplazo oficial recomendado (ver console.groq.com/docs/deprecations). Bug real en
+    # producción: todas las llamadas a Groq devolvían 404 tras el apagado.
     groq_base_url: str = "https://api.groq.com/openai/v1"
     groq_api_key: str | None = None
-    groq_model: str = "llama-3.1-8b-instant"
+    groq_model: str = "openai/gpt-oss-20b"
 
     sentry_dsn: str | None = None
 

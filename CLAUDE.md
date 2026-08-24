@@ -9,7 +9,7 @@ completa, [docs/AGENTES.md](docs/AGENTES.md)/[docs/HERRAMIENTAS.md](docs/HERRAMI
 ## Stack
 
 - **Backend** (`src/`): Python 3.12, FastAPI async, Pydantic v2, SQLAlchemy 2.0 async +
-  `asyncpg`, PostgreSQL + `pgvector`, Alembic. LLMs: Groq (`llama-3.1-8b-instant`, generación),
+  `asyncpg`, PostgreSQL + `pgvector`, Alembic. LLMs: Groq (`openai/gpt-oss-20b`, generación),
   Gemini (`gemini-flash-latest`, multimodal/OCR de recetas), Ollama local (embeddings,
   `nomic-embed-text`).
 - **Frontend** (`frontend/`): TypeScript + Vite + Tailwind CSS v4, sin framework de UI (DOM

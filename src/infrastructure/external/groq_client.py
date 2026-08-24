@@ -28,7 +28,7 @@ from src.infrastructure.metrics import timed
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_SECONDS = 15.0
-DEFAULT_COMPLETION_MODEL = "llama-3.1-8b-instant"
+DEFAULT_COMPLETION_MODEL = "openai/gpt-oss-20b"
 
 
 class GroqClient:
