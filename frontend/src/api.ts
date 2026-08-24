@@ -20,6 +20,12 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:800
 const API_KEY = import.meta.env.VITE_API_KEY;
 const REQUEST_TIMEOUT_MS = 60_000;
 const HEALTH_TIMEOUT_MS = 5_000;
+// El análisis de receta encadena OCR de Gemini (hasta 3 intentos, 25s cada uno, si Google
+// devuelve 503 "high demand") + verificación de interacciones por fármaco — puede superar
+// los 60s normales de forma legítima. Bug real detectado en producción: con
+// REQUEST_TIMEOUT_MS, el frontend abortaba la petición (y mostraba "tiempo de espera
+// agotado") antes de que el backend, que sí llegaba a responder, terminase.
+const PRESCRIPTION_REQUEST_TIMEOUT_MS = 120_000;
 
 export class ApiError extends Error {}
 
@@ -34,9 +40,13 @@ function buildHeaders(extra?: HeadersInit): Headers {
   return headers;
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<ApiResult<T>> {
+async function request<T>(
+  path: string,
+  init: RequestInit = {},
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
+): Promise<ApiResult<T>> {
   const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
   const started = performance.now();
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -101,8 +111,9 @@ export function checkInteractions(drugs: string[]): Promise<ApiResult<Interactio
 export function processPrescription(file: File): Promise<ApiResult<ProcessPrescriptionResponse>> {
   const formData = new FormData();
   formData.append("file", file);
-  return request<ProcessPrescriptionResponse>("/api/v1/pharmacy/process-prescription", {
-    method: "POST",
-    body: formData,
-  });
+  return request<ProcessPrescriptionResponse>(
+    "/api/v1/pharmacy/process-prescription",
+    { method: "POST", body: formData },
+    PRESCRIPTION_REQUEST_TIMEOUT_MS,
+  );
 }

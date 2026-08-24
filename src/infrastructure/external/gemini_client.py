@@ -33,6 +33,14 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "gemini-flash-latest"
 
+# Sin timeout explícito, el SDK de google-genai no acota la espera por intento — con
+# `gemini-flash-latest` bajo alta demanda (Google devuelve 503 "high demand", reintentado
+# por `retry_transient_errors`), cada intento podía tardar hasta ~100s, sumando hasta 300s
+# entre los 3 intentos y chocando con el límite duro de Cloud Run (504). Bug real en
+# producción. 25s por intento deja margen para OCR real sin permitir que un solo intento
+# acapare todo el presupuesto de tiempo de la petición.
+DEFAULT_TIMEOUT_MS = 25_000
+
 SYSTEM_PROMPT = (
     "Eres un asistente farmacéutico que transcribe recetas médicas con precisión clínica. "
     "Extrae de la imagen de la receta cada fármaco prescrito junto con su dosificación, "
@@ -62,7 +70,14 @@ class GeminiClient:
 
     def __init__(self, api_key: str | None = None, model: str = DEFAULT_MODEL) -> None:
         resolved_key = api_key or settings.google_api_key
-        self._client = genai.Client(api_key=resolved_key) if resolved_key else None
+        self._client = (
+            genai.Client(
+                api_key=resolved_key,
+                http_options=types.HttpOptions(timeout=DEFAULT_TIMEOUT_MS),
+            )
+            if resolved_key
+            else None
+        )
         self._model = model
 
     @timed("gemini")
